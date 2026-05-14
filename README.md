@@ -52,6 +52,7 @@ tunable quality↔speed dial.
 ```bash
 uv sync                       # create .venv from pyproject.toml + uv.lock
 source .venv/bin/activate     # (or prefix the commands below with `uv run`)
+python smoke_test.py          # optional: verify the core stack works (~2 min, CPU)
 
 # 1. tokenize a corpus (streams FineWeb-Edu; ~2B tokens is plenty for the 150M)
 python scripts/prepare_data.py --out-dir data/fineweb_edu --num-tokens 2_000_000_000

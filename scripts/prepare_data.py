@@ -12,6 +12,7 @@ process at training time.
 """
 import argparse
 import os
+import sys
 
 import numpy as np
 import tiktoken
@@ -66,6 +67,12 @@ def main():
     write_split(os.path.join(args.out_dir, "val.bin"), stream, val_target, "val")
     write_split(os.path.join(args.out_dir, "train.bin"), stream, args.num_tokens, "train")
     print("done.")
+
+    # The `datasets` streaming reader leaves background threads that can crash
+    # during interpreter shutdown (a known datasets/fsspec teardown issue). The
+    # .bin files are already closed and flushed, so exit hard to skip finalization.
+    sys.stdout.flush()
+    os._exit(0)
 
 
 if __name__ == "__main__":
