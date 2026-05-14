@@ -84,6 +84,11 @@ def main():
     if cfg.compile:
         if master_process:
             print("compiling model (first step will be slow) ...")
+        # compile is an optimization, not a requirement — if the backend is
+        # unavailable (e.g. a broken/missing triton on some Jetson/ARM builds),
+        # fall back to eager instead of crashing the whole run.
+        import torch._dynamo
+        torch._dynamo.config.suppress_errors = True
         model = torch.compile(model)
     if ddp:
         model = DDP(model, device_ids=[ddp_local_rank])
