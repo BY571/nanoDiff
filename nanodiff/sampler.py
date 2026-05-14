@@ -75,6 +75,11 @@ def generate(model, prompt_ids, gen_length, steps, block_length=None,
         for i in range(steps_per_block):
             is_mask = x == mask_id
             logits = model(x)
+            # The [MASK] token is an input-only sentinel — it never appears in
+            # clean data, so it is never a valid generation. Forbid it, otherwise
+            # the model could "predict" a mask, the commit becomes a silent no-op,
+            # and the position is left masked forever.
+            logits[:, :, mask_id] = float("-inf")
 
             if temperature > 0:
                 probs = F.softmax(logits.float() / temperature, dim=-1)
