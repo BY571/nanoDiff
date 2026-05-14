@@ -8,8 +8,9 @@ Think of it as [nanoGPT](https://github.com/karpathy/nanoGPT) / nanochat, but fo
 **LLaDA** recipe (the simplest formulation that has scaled to 8B–100B) down to a
 small modular package you can read in an afternoon.
 
-> The literature this distills — the lineage from D3PM to LLaDA 2.0 — is listed
-> under [References](#references) at the bottom.
+> Based on **LLaDA — Large Language Diffusion Models**
+> ([Nie et al. 2025, arXiv:2502.09992](https://arxiv.org/abs/2502.09992)). The
+> broader lineage (D3PM → LLaDA 2.0) is in [References](#references).
 
 ---
 
@@ -43,37 +44,6 @@ tunable quality↔speed dial.
         t=0  the meaning of life is   (clean text)
                 ▲ each step: predict all, commit the confident ones, repeat
 ```
-
----
-
-## Repo layout
-
-```
-nanodiff/
-  config.py          # one dataclass — all hyperparameters
-  model.py           # bidirectional LLaMA-style transformer (the "denoiser")
-  diffusion.py       # forward masking process + the 1/t-weighted loss
-  sampler.py         # reverse process: low-confidence remasking + semi-AR blocks
-  data.py            # memory-mapped uint16 token loader
-  utils.py           # WSD lr schedule, checkpoint IO, config loading
-  sft.py             # [stub] supervised fine-tuning            (milestone)
-  block_diffusion.py # [stub] block-diffusion training (BD3-LM) (milestone)
-  ar_init.py         # [stub] init from a pretrained AR model   (milestone)
-
-configs/
-  train_150m.py      # ~150M params, single GPU
-  train_1b.py        # ~1.3B params, multi-GPU / DGX-Spark
-
-scripts/
-  prepare_data.py    # stream + tokenize FineWeb-Edu -> train.bin / val.bin
-
-train.py             # training loop (DDP, bf16, grad-accum, torch.compile)
-sample.py            # generate text from a checkpoint
-eval.py              # NLL-bound / perplexity on held-out data
-```
-
-The split is deliberate: `diffusion.py` and `sampler.py` are the *only* files that
-contain diffusion-specific logic. Everything else is a normal transformer setup.
 
 ---
 
@@ -130,24 +100,6 @@ parameterization — see the comment at the top of `model.py`), no ELBO bookkeep
 
 ---
 
-## Roadmap — the learning path
-
-The core (pretrain + sample + eval) is fully implemented. The next milestones are
-**documented stubs** — each file explains the recipe and points at the exact paper
-section, so implementing them is a guided exercise:
-
-| Milestone | File | What it adds | Paper |
-|---|---|---|---|
-| **SFT** | `nanodiff/sft.py` | instruction-following: mask only the response | LLaDA §2.3, Alg. 2 |
-| **Block diffusion** | `nanodiff/block_diffusion.py` | block-causal *training* → KV-cache, any-length | BD3-LM (ICLR'25) |
-| **AR-init** | `nanodiff/ar_init.py` | warm-start from a pretrained AR model | Dream 7B, LLaDA 2.0 |
-
-Further ideas for the "...and maybe improve it" part: low-variance NLL estimator
-(LLaDA Eq. 14), classifier-free guidance, soft-masking (IBM 2025), confidence-based
-token editing (LLaDA 2.1), few-step distillation.
-
----
-
 ## References
 
 The recipe `nanoDiff` implements is **LLaDA**; the lineage and the papers each
@@ -163,9 +115,3 @@ stub points to:
 | Dream 7B — Diffusion Large Language Models | 2025 | [2508.15487](https://arxiv.org/abs/2508.15487) |
 | LLaDA 2.0 — Scaling Diffusion Language Models to 100B | 2025 | [2512.15745](https://arxiv.org/abs/2512.15745) |
 | A Survey on Diffusion Language Models | 2025 | [2508.10875](https://arxiv.org/abs/2508.10875) |
-
-## Credits
-
-The recipe is **LLaDA** (Nie et al. 2025), which itself builds on **MDLM**,
-**SEDD**, and **D3PM**. The engineering style (single config dataclass, memmap
-data, `torch.compile`/DDP loop) follows Andrej Karpathy's nanoGPT.
