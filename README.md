@@ -50,7 +50,8 @@ tunable quality↔speed dial.
 ## Quickstart
 
 ```bash
-pip install -r requirements.txt
+uv sync                       # create .venv from pyproject.toml + uv.lock
+source .venv/bin/activate     # (or prefix the commands below with `uv run`)
 
 # 1. tokenize a corpus (streams FineWeb-Edu; ~2B tokens is plenty for the 150M)
 python scripts/prepare_data.py --out-dir data/fineweb_edu --num-tokens 2_000_000_000

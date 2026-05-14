@@ -1,0 +1,19 @@
+[project]
+name = "nanodiff"
+version = "0.1.0"
+description = "A minimal, hackable masked diffusion language model (the LLaDA recipe)."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "torch>=2.4",
+    "numpy",
+    "tiktoken",
+    "datasets",
+    "tqdm",
+]
+
+# nanoDiff is an application (run train.py / sample.py / eval.py from the repo
+# root), not a library to install — so uv manages the env but doesn't build a
+# wheel for the `nanodiff/` package.
+[tool.uv]
+package = false
