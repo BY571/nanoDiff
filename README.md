@@ -100,6 +100,33 @@ parameterization — see the comment at the top of `model.py`), no ELBO bookkeep
 
 ---
 
+## Training customization
+
+**Dataset — fully swappable.** The pipeline only ever sees a flat `uint16` token
+array on disk, so it is dataset-agnostic. Either point `prepare_data.py` at any
+Hugging Face text dataset (it just needs a `"text"` field):
+
+```bash
+python scripts/prepare_data.py --dataset <hf-name> --subset <config> --out-dir data/mine
+```
+
+or produce your own `train.bin` / `val.bin` (any `uint16` token dump) and set
+`data_dir` in your config — the model never knows the difference.
+
+**Tokenizer — coupled, but in known places.** The GPT-2 BPE is wired in as the
+default working path. Swapping it means updating these spots:
+
+| File(s) | What to change |
+|---|---|
+| `scripts/prepare_data.py`, `sample.py`, `train.py` | `tiktoken.get_encoding("gpt2")` |
+| `nanodiff/config.py` | `vocab_size`, `mask_token_id` (= last real id + 1, then pad) |
+| `scripts/prepare_data.py`, `sample.py`, `train.py` | `EOT` — the document-separator id |
+| `nanodiff/data.py` | `uint16` dtype caps the vocab at 65536; use `uint32` above that |
+
+**Model size — a one-file config change.** See [Scaling](#scaling) above.
+
+---
+
 ## References
 
 The recipe `nanoDiff` implements is **LLaDA**; the lineage and the papers each
