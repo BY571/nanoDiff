@@ -88,6 +88,12 @@ def main():
     raw_model = unwrap_model(model)
     scaler = torch.amp.GradScaler(device_type, enabled=(cfg.dtype == "float16"))
 
+    # ---- logging (Weights & Biases, optional — off unless cfg.wandb_log) ----
+    use_wandb = cfg.wandb_log and master_process
+    if use_wandb:
+        import wandb
+        wandb.init(project=cfg.wandb_project, name=cfg.name, config=vars(cfg))
+
     @torch.no_grad()
     def estimate_loss():
         """Average diffusion loss on train/val — this IS the NLL upper bound."""
@@ -118,7 +124,10 @@ def main():
             out = generate(raw_model, prompt, cfg.sample_gen_length,
                            steps=cfg.sample_steps)
         gen = [tok for tok in out[0].tolist() if tok < 50256]
-        print(f"  sample: {enc.decode(gen)!r}")
+        text = enc.decode(gen)
+        print(f"  sample: {text!r}")
+        if use_wandb:
+            wandb.log({"sample": text}, step=iter_num)
 
     # ---- training loop ----
     iter_num = 0
@@ -136,6 +145,9 @@ def main():
             losses = estimate_loss()
             print(f"iter {iter_num:>7}: train {losses['train']:.4f}  "
                   f"val {losses['val']:.4f}  lr {lr:.2e}")
+            if use_wandb:
+                wandb.log({"train/loss": losses["train"], "val/loss": losses["val"],
+                           "lr": lr}, step=iter_num)
             if losses["val"] < best_val:
                 best_val = losses["val"]
                 save_checkpoint(os.path.join(cfg.out_dir, "ckpt.pt"),
@@ -169,13 +181,18 @@ def main():
             dt = time.time() - t0
             t0 = time.time()
             full_loss = loss.item() * cfg.grad_accum_steps
-            print(f"  step {iter_num:>7}  loss {full_loss:.4f}  "
-                  f"{dt / cfg.log_interval * 1000:.0f} ms/step")
+            ms_per_step = dt / cfg.log_interval * 1000
+            print(f"  step {iter_num:>7}  loss {full_loss:.4f}  {ms_per_step:.0f} ms/step")
+            if use_wandb:
+                wandb.log({"train/step_loss": full_loss, "lr": lr,
+                           "perf/ms_per_step": ms_per_step}, step=iter_num)
 
     if master_process:
         save_checkpoint(os.path.join(cfg.out_dir, "ckpt_final.pt"),
                         model, optimizer, iter_num, cfg, best_val)
         print(f"done. best val loss {best_val:.4f}")
+        if use_wandb:
+            wandb.finish()
     if ddp:
         destroy_process_group()
 

@@ -10,6 +10,7 @@ dependencies = [
     "tiktoken",
     "datasets",
     "tqdm",
+    "wandb",
 ]
 
 # nanoDiff is an application (run train.py / sample.py / eval.py from the repo

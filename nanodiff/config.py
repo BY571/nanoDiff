@@ -68,6 +68,10 @@ class Config:
     # ---- io ----
     out_dir: str = "checkpoints/nanodiff"
 
+    # ---- logging ----
+    wandb_log: bool = False         # set True to log metrics to Weights & Biases
+    wandb_project: str = "nanodiff"
+
     def __post_init__(self):
         assert self.n_embd % self.n_head == 0, "n_embd must be divisible by n_head"
         head_dim = self.n_embd // self.n_head
