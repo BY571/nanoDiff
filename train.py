@@ -18,8 +18,6 @@ import time
 from contextlib import nullcontext
 
 import torch
-from torch.nn.parallel import DistributedDataParallel as DDP
-from torch.distributed import init_process_group, destroy_process_group
 
 from nanodiff.model import NanoDiff
 from nanodiff.diffusion import forward_process, diffusion_loss
@@ -37,6 +35,10 @@ def main():
     # ---- distributed setup (no-op unless launched with torchrun) ----
     ddp = int(os.environ.get("RANK", -1)) != -1
     if ddp:
+        # Imported lazily: some PyTorch builds (e.g. Jetson) ship without
+        # distributed support — single-GPU training must not require it.
+        from torch.nn.parallel import DistributedDataParallel as DDP
+        from torch.distributed import init_process_group, destroy_process_group
         init_process_group(backend="nccl")
         ddp_rank = int(os.environ["RANK"])
         ddp_local_rank = int(os.environ["LOCAL_RANK"])
