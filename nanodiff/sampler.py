@@ -60,8 +60,11 @@ def generate(model, prompt_ids, gen_length, steps, block_length=None,
     block_length = block_length or gen_length
     assert gen_length % block_length == 0, "gen_length must be divisible by block_length"
     n_blocks = gen_length // block_length
-    assert steps % n_blocks == 0, "steps must be divisible by the number of blocks"
-    steps_per_block = steps // n_blocks
+    assert steps >= n_blocks, "steps must be at least the number of blocks"
+    # Distribute `steps` across blocks; if it doesn't divide evenly, the first
+    # `extra` blocks get one additional refinement pass each.
+    base_steps = steps // n_blocks
+    extra = steps % n_blocks
 
     # Start fully masked, then drop in the (clean, fixed) prompt.
     x = torch.full((B, P + gen_length), mask_id, dtype=torch.long, device=device)
@@ -70,9 +73,10 @@ def generate(model, prompt_ids, gen_length, steps, block_length=None,
     for b in range(n_blocks):
         s0 = P + b * block_length          # active block: [s0, s1)
         s1 = s0 + block_length
-        counts = _transfer_schedule(block_length, steps_per_block, device)
+        block_steps = base_steps + (1 if b < extra else 0)
+        counts = _transfer_schedule(block_length, block_steps, device)
 
-        for i in range(steps_per_block):
+        for i in range(block_steps):
             is_mask = x == mask_id
             logits = model(x)
             # The [MASK] token is an input-only sentinel — it never appears in
