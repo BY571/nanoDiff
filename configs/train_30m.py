@@ -1,8 +1,10 @@
-"""~30M total params (~11M non-embedding) — the smallest config, good for quick
-real-data runs on a single modest GPU.
+"""~30M total params (~11M non-embedding) — the smallest "real" config.
+
+A serious small-model run on real text. 30k iters at 16K tokens/iter sees
+~480M tokens, so prepare at least ~500M tokens of FineWeb-Edu:
 
     python scripts/prepare_data.py --out-dir data/fineweb_edu --num-tokens 500_000_000
-    python train.py --config configs/train_30m.py
+    NANODIFF_WANDB=1 python train.py --config configs/train_30m.py
 """
 from nanodiff.config import Config
 
@@ -22,11 +24,11 @@ config = Config(
     # effective batch = 8 * 4 = 32 sequences (~16K tokens / iter)
     batch_size=8,
     grad_accum_steps=4,
-    max_iters=10_000,
+    max_iters=30_000,
     lr=6e-4,
     min_lr=1e-5,
-    warmup_iters=300,
-    decay_iters=2_000,
+    warmup_iters=1_000,
+    decay_iters=5_000,
 
     # ---- io ----
     out_dir="checkpoints/30m",

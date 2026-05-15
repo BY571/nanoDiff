@@ -96,8 +96,14 @@ def main():
     raw_model = unwrap_model(model)
     scaler = torch.amp.GradScaler(device_type, enabled=(cfg.dtype == "float16"))
 
-    # ---- logging (Weights & Biases, optional — off unless cfg.wandb_log) ----
-    use_wandb = cfg.wandb_log and master_process
+    # ---- logging (Weights & Biases, optional) ----
+    # Enable by either setting cfg.wandb_log=True OR exporting NANODIFF_WANDB=1.
+    # The env-var route lets you flip logging on for any committed config without
+    # editing it.
+    use_wandb = (
+        cfg.wandb_log
+        or os.environ.get("NANODIFF_WANDB", "").lower() in ("1", "true", "yes", "on")
+    ) and master_process
     if use_wandb:
         import wandb
         wandb.init(project=cfg.wandb_project, name=cfg.name, config=vars(cfg))
