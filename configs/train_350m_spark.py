@@ -24,11 +24,8 @@ config = Config(
     data_dir="data/fineweb_edu",
 
     # ---- optimization (identical to the rest of the sweep) ----
-    # Requires PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True at launch.
-    # 350M is the largest, most likely to OOM — if it does after the smaller
-    # models complete, drop to batch_size=64, grad_accum_steps=2.
-    batch_size=128,
-    grad_accum_steps=1,
+    batch_size=32,
+    grad_accum_steps=4,
     max_iters=16_000,
     lr=1.2e-3,
     min_lr=1e-5,
