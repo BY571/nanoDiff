@@ -52,8 +52,14 @@ def diffusion_loss(logits, x0, mask, t):
         scalar loss (a stochastic upper bound on the negative log-likelihood).
     """
     B, T, V = logits.shape
+    # NOTE: we pass bf16 logits straight to cross_entropy — `F.cross_entropy`
+    # already upcasts to fp32 *internally* for log_softmax (numerical stability)
+    # but does not store an fp32 copy in the autograd graph. Skipping `.float()`
+    # here saves ~B*T*V*4 bytes for the cast + ~same for its gradient — at
+    # B=128, T=1024, V=50304 that's ~52 GB. Critical for fitting big-batch
+    # training in a single-GPU box's memory.
     ce = F.cross_entropy(
-        logits.reshape(-1, V).float(),
+        logits.reshape(-1, V),
         x0.reshape(-1),
         reduction="none",
     ).reshape(B, T)

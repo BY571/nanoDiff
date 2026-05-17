@@ -30,14 +30,13 @@ config = Config(
     data_dir="data/fineweb_edu",
 
     # ---- optimization (Spark-tuned) ----
-    # Effective batch = 32 * 4 = 128 sequences = 131K tokens/iter.
-    # batch_size=128 with grad_accum=1 was OOM-killed even with
-    # expandable_segments — the diffusion loss's float-logits tensor (~26 GB)
-    # + its gradient (~26 GB) + softmax workspace push training-step memory
-    # over the GB10's 121 GB usable. batch=32 keeps each microstep ~6.6 GB
-    # logits-float. Same effective batch.
-    batch_size=32,
-    grad_accum_steps=4,
+    # Effective batch = 128 sequences = 131K tokens/iter.
+    # 4× our Jetson effective batch (32), so LR is sqrt-scaled: 6e-4 → 1.2e-3.
+    # 16k iters × 131K = ~2.1B tokens seen = ~1 epoch of the 2B dataset.
+    # batch=128 fits now that diffusion_loss no longer .float()'s the logits
+    # (saves ~52 GB at this batch — peak training mem ~63 GB on the GB10).
+    batch_size=128,
+    grad_accum_steps=1,
     max_iters=16_000,
     lr=1.2e-3,
     min_lr=1e-5,

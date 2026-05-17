@@ -23,8 +23,8 @@ config = Config(
     data_dir="data/fineweb_edu",
 
     # ---- optimization (identical to the rest of the sweep) ----
-    batch_size=32,
-    grad_accum_steps=4,
+    batch_size=128,
+    grad_accum_steps=1,
     max_iters=16_000,
     lr=1.2e-3,
     min_lr=1e-5,
