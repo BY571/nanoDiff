@@ -12,6 +12,10 @@
 set -euo pipefail
 
 export NANODIFF_WANDB=1
+# Reduces PyTorch CUDA-allocator fragmentation. The diffusion loss's
+# float-logits tensor is ~26 GB at B=128, V=50304 — without expandable
+# segments the allocator leaves ~25 GB reserved-but-unallocated and OOMs.
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 PY=".venv/bin/python"
 
 echo "=== capacity sweep: 50M → 150M → 350M on 2B FineWeb-Edu ==="
