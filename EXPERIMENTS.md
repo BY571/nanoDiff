@@ -132,6 +132,44 @@ bigger hardware is.
 
 ---
 
+## Planned next: capacity sweep on DGX-Spark
+
+Run 3 left a clean open question: *the 30M is at its data floor — how much
+does adding capacity buy on the same 2B-token dataset?* The answer is a
+three-run sweep on the Spark, varying only model size:
+
+| Run | Model | Non-emb params | Tokens | Iters | Effective batch | Est. wall-clock |
+|---|---|---|---|---|---|---|
+| 4 | 50M  | 49.6 M | 2.1 B | 16 k | 128 seqs | ~2 hrs |
+| 5 | 150M | 151.8 M | 2.1 B | 16 k | 128 seqs | ~3 hrs |
+| 6 | 350M | 303.6 M | 2.1 B | 16 k | 128 seqs | ~5-6 hrs |
+
+Everything *except model size* is held constant — same data, same iters, same
+batch, same LR (sqrt-scaled from the Jetson runs: `6e-4 → 1.2e-3` for the
+4× larger effective batch), same WSD schedule proportions. The result is a
+**capacity curve at fixed data**, directly comparable to the 30M Run 3 point.
+
+Configs: `configs/train_50m_spark.py`, `train_150m_spark.py`, `train_350m_spark.py`.
+Launch: `bash scripts/spark_sweep.sh` (runs all three sequentially with W&B
+logging on).
+
+Three outcomes we'd interpret:
+- **Val drops sharply with each step up (e.g., 50M ≈ 4.3, 150M ≈ 4.0, 350M ≈ 3.7):**
+  the 2B-token dataset has plenty of *information* the 30M just couldn't extract.
+  Scale model on this same data is the cheap next move.
+- **Val drops then plateaus (e.g., 50M ≈ 4.3, 150M ≈ 4.1, 350M ≈ 4.05):**
+  we've hit the *data's* signal limit at this scale — more capacity is now
+  data-bound. Scale data next, on a bigger box.
+- **All three land near 4.4–4.5:** something else is the bottleneck (likely
+  the masked-diffusion objective at this scale, or block_size, or LR). Worth
+  investigating before more compute.
+
+The wall-clock budget (~10-12 hrs total) leaves headroom in a 24-40 hr window
+for either a 4th larger run (e.g., 700M) or repeating the most informative
+point with a different LR / longer schedule.
+
+---
+
 ## Portability fixes that came out of these runs
 
 Captured here as a warning for anyone porting nanoDiff to non-standard
