@@ -102,6 +102,12 @@ parameterization — see the comment at the top of `model.py`), no ELBO bookkeep
 
 ---
 
+## Experiments
+
+Empirical findings + scaling sweep from training runs — see [`EXPERIMENTS.md`](EXPERIMENTS.md).
+
+---
+
 ## Training customization
 
 **Dataset — fully swappable.** The pipeline only ever sees a flat `uint16` token
