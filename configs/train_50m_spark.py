@@ -30,11 +30,14 @@ config = Config(
     data_dir="data/fineweb_edu",
 
     # ---- optimization (Spark-tuned) ----
-    # Effective batch = 128 sequences = 131K tokens/iter.
+    # Effective batch = 32 * 4 = 128 sequences = 131K tokens/iter.
+    # batch_size=128, grad_accum=1 hit OOM at first training step because the
+    # diffusion loss's logits.float() cast materializes a ~26 GB fp32 tensor
+    # (B*T*V at B=128); kept here at 32 to keep the float-logits tensor ~6.6 GB.
     # 4× our Jetson effective batch (32), so LR is sqrt-scaled: 6e-4 → 1.2e-3.
     # 16k iters × 131K = ~2.1B tokens seen = ~1 epoch of the 2B dataset.
-    batch_size=128,
-    grad_accum_steps=1,
+    batch_size=32,
+    grad_accum_steps=4,
     max_iters=16_000,
     lr=1.2e-3,
     min_lr=1e-5,

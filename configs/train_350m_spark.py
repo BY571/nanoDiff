@@ -4,9 +4,6 @@ The largest model in the sweep. Identical batch + schedule + data to the
 50M and 150M sweep configs. ~24 layers @ 1024-dim = ~300M non-embedding,
 ~350M total under tied embeddings.
 
-If memory is tight at batch_size=128, drop to 64 with grad_accum_steps=2 —
-same effective batch, slightly slower iter.
-
 Run:
     NANODIFF_WANDB=1 python train.py --config configs/train_350m_spark.py
 
@@ -27,8 +24,10 @@ config = Config(
     data_dir="data/fineweb_edu",
 
     # ---- optimization (identical to the rest of the sweep) ----
-    batch_size=128,
-    grad_accum_steps=1,
+    # batch_size=32 with grad_accum=4 keeps the diffusion loss's float-logits
+    # tensor manageable (~6.6 GB instead of ~26 GB at B=128). Same effective batch.
+    batch_size=32,
+    grad_accum_steps=4,
     max_iters=16_000,
     lr=1.2e-3,
     min_lr=1e-5,
