@@ -34,12 +34,24 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--ckpt", required=True)
     p.add_argument("--gen-length", type=int, default=96)
-    p.add_argument("--steps", type=int, default=192,
-                   help="denoising steps; >= gen-length for good quality")
+    p.add_argument("--steps", type=int, default=96,
+                   help="denoising steps; LLaDA-recommended sweet spot is steps≈gen-length. "
+                        "Set higher for quality (slower), lower for speed (quality drops fast).")
     p.add_argument("--block-length", type=int, default=32,
                    help="semi-AR block size (<= gen-length); smaller = more AR-like")
     p.add_argument("--temperature", type=float, default=0.8)
+    p.add_argument("--top-k", type=int, default=None,
+                   help="keep only the k highest-prob tokens; off by default")
+    p.add_argument("--top-p", type=float, default=0.9,
+                   help="nucleus sampling cutoff; the main lever against "
+                        "repetition collapse on small base models. 1.0 disables.")
     p.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
+    p.add_argument("--dtype", default=None,
+                   help="bfloat16/float16/float32; auto = bf16 on cuda, fp32 on cpu. "
+                        "Matches training dtype for ~2x speedup on GPU.")
+    p.add_argument("--compile", action="store_true",
+                   help="torch.compile(model) for kernel fusion. ~2-3x faster after a "
+                        "one-time ~20s warmup on the first generation.")
     p.add_argument("--seed", type=int, default=None)
     args = p.parse_args()
 
@@ -50,17 +62,30 @@ def main():
     cfg = ckpt["config"]
     model = NanoDiff(cfg)
     model.load_state_dict(ckpt["model"])
-    model.to(args.device).eval()
+
+    # Match training dtype on GPU; fp32 weights are 2x larger and 2x slower on Blackwell.
+    if args.dtype is None:
+        args.dtype = "bfloat16" if args.device.startswith("cuda") else "float32"
+    dtype = getattr(torch, args.dtype)
+    model.to(args.device, dtype=dtype).eval()
+
+    if args.compile:
+        print("compiling kernels (one-time ~20s warmup on first generation)…")
+        model = torch.compile(model)
+
     enc = tiktoken.get_encoding("gpt2")
 
-    n_params = model.get_num_params(non_embedding=False) / 1e6
-    print(f"\nnanoDiff chat  ·  {cfg.name}  ·  {n_params:.0f}M params  ·  device={args.device}")
+    n_params = (sum(p.numel() for p in model.parameters())) / 1e6
+    print(f"\nnanoDiff chat  ·  {cfg.name}  ·  {n_params:.0f}M params  ·  "
+          f"device={args.device}  dtype={args.dtype}  compile={args.compile}")
     print(f"gen_length={args.gen_length}  steps={args.steps}  "
-          f"block_length={args.block_length}  temperature={args.temperature}")
+          f"block_length={args.block_length}  temperature={args.temperature}  "
+          f"top_k={args.top_k}  top_p={args.top_p}")
     print("BASE model (no instruction tuning) — your turns accumulate as one document.")
     print("Commands: `!reset` to clear, `!history`, `!set <key> <value>`, `q` to quit.\n")
 
-    settable = {"gen_length", "steps", "block_length", "temperature", "seed"}
+    settable = {"gen_length", "steps", "block_length", "temperature",
+                "top_k", "top_p", "seed"}
     history_ids: list[int] = []   # accumulated token ids across turns
 
     while True:
@@ -110,16 +135,25 @@ def main():
             history_ids = history_ids[-max_prompt_len:]
 
         prompt = torch.tensor([history_ids], dtype=torch.long, device=args.device)
+        if args.device.startswith("cuda"):
+            torch.cuda.synchronize()
+        import time as _t; _t0 = _t.time()
         out = generate(
             model, prompt,
             gen_length=args.gen_length,
             steps=args.steps,
             block_length=args.block_length,
             temperature=args.temperature,
+            top_k=args.top_k,
+            top_p=args.top_p,
         )
+        if args.device.startswith("cuda"):
+            torch.cuda.synchronize()
+        dt = _t.time() - _t0
         # Generated portion only; strip special tokens (MASK/padding/EOT).
         gen_ids = [t for t in out[0, len(history_ids):].tolist() if t < EOT]
-        print("<<<", enc.decode(gen_ids), "\n", sep="")
+        print(f"<<< [{dt*1000:.0f} ms · {len(gen_ids)/dt:.1f} tok/s] ",
+              enc.decode(gen_ids), "\n", sep="")
 
         # Append the model's continuation to history so the next turn sees it.
         history_ids = history_ids + gen_ids

@@ -64,6 +64,7 @@ class Config:
     device: str = "cuda"
     dtype: str = "bfloat16"         # "bfloat16" | "float16" | "float32"
     compile: bool = True
+    compile_mode: str = "default"   # "default" | "reduce-overhead" (cuda graphs) | "max-autotune"
 
     # ---- io ----
     out_dir: str = "checkpoints/nanodiff"

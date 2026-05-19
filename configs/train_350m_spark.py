@@ -24,8 +24,11 @@ config = Config(
     data_dir="data/fineweb_edu",
 
     # ---- optimization (identical to the rest of the sweep) ----
-    batch_size=128,
-    grad_accum_steps=1,
+    # Effective batch = 32 * 4 = 128 (matches 50M sweep). At depth=24 × dim=1024,
+    # microbatch=128 would need ~270 GB peak (2x the 150M). microbatch=32 fits
+    # comfortably with grad accumulation preserving the effective batch.
+    batch_size=32,
+    grad_accum_steps=4,
     max_iters=16_000,
     lr=1.2e-3,
     min_lr=1e-5,

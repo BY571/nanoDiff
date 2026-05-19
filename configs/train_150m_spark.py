@@ -23,8 +23,10 @@ config = Config(
     data_dir="data/fineweb_edu",
 
     # ---- optimization (identical to the rest of the sweep) ----
-    batch_size=128,
-    grad_accum_steps=1,
+    # Effective batch = 64 * 2 = 128 (matches 50M sweep). At depth=12 × dim=1024,
+    # microbatch=128 OOMs on Spark (~135 GB peak); microbatch=64 fits at ~70 GB.
+    batch_size=64,
+    grad_accum_steps=2,
     max_iters=16_000,
     lr=1.2e-3,
     min_lr=1e-5,
