@@ -1,5 +1,6 @@
 """Small shared helpers: config loading, LR schedule, checkpoint IO."""
 import importlib.util
+import math
 import os
 
 import torch
@@ -25,22 +26,32 @@ def unwrap_model(model):
 
 
 def get_lr(it, cfg):
-    """Warmup-Stable-Decay (WSD) learning-rate schedule — LLaDA's choice.
+    """Learning-rate schedule. Two shapes supported, both with linear warmup:
 
+      "wsd" (default, LLaDA's choice):
         warmup: linear   0  -> lr        over the first  `warmup_iters`
         stable: constant lr               in the middle
         decay : linear   lr -> min_lr     over the final  `decay_iters`
+        Holds peak LR most of training, so you can stop+decay at any point.
 
-    WSD keeps the LR flat for most of training, so you can stop (and decay) at any
-    point without the cosine schedule's "you must commit to max_iters up front".
+      "cosine" (nanoGPT default):
+        warmup: linear   0  -> lr        over the first  `warmup_iters`
+        decay : half-cosine lr -> min_lr from warmup end through max_iters.
+        Smooth monotonic descent, no stable phase. `decay_iters` is ignored.
     """
     if it < cfg.warmup_iters:
         return cfg.lr * (it + 1) / cfg.warmup_iters
-    decay_start = cfg.max_iters - cfg.decay_iters
-    if it >= decay_start:
-        progress = min((it - decay_start) / max(1, cfg.decay_iters), 1.0)
-        return cfg.lr - progress * (cfg.lr - cfg.min_lr)
-    return cfg.lr
+    if cfg.schedule == "cosine":
+        progress = (it - cfg.warmup_iters) / max(1, cfg.max_iters - cfg.warmup_iters)
+        progress = min(progress, 1.0)
+        return cfg.min_lr + 0.5 * (cfg.lr - cfg.min_lr) * (1 + math.cos(math.pi * progress))
+    if cfg.schedule == "wsd":
+        decay_start = cfg.max_iters - cfg.decay_iters
+        if it >= decay_start:
+            progress = min((it - decay_start) / max(1, cfg.decay_iters), 1.0)
+            return cfg.lr - progress * (cfg.lr - cfg.min_lr)
+        return cfg.lr
+    raise ValueError(f"unknown schedule: {cfg.schedule!r} (expected 'wsd' or 'cosine')")
 
 
 def save_checkpoint(path, model, optimizer, iter_num, cfg, best_val=None):

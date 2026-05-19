@@ -49,8 +49,9 @@ class Config:
     # Warmup-Stable-Decay (WSD) schedule, as used by LLaDA.
     lr: float = 4e-4
     min_lr: float = 1e-5
+    schedule: str = "wsd"           # "wsd" | "cosine"
     warmup_iters: int = 2000
-    decay_iters: int = 20_000       # linear decay over the FINAL `decay_iters` steps
+    decay_iters: int = 20_000       # WSD only: linear decay over the FINAL `decay_iters` steps
 
     # ---- evaluation / sampling during training ----
     eval_interval: int = 1000
