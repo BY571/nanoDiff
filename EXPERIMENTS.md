@@ -4,10 +4,14 @@ Empirical findings from each training run, in chronological order. What matters
 here is the *dynamics* and what they imply about the next experiment, not the
 absolute numbers (those date instantly).
 
-All runs use the same 30M-param model (`configs/train_30m*.py`): 6 layers,
-n_embd 384, n_head 6, block_size 512, GPT-2 BPE, masked-diffusion objective,
-trained on FineWeb-Edu (`sample-10BT`). Training on a Jetson Orin (eager mode,
-bf16 autocast, no compile, no DDP — the Jetson torch build supports none of those).
+The log has two phases:
+- **Runs 1-3 (Jetson phase)** — a 30M-param model (`configs/train_30m*.py`):
+  6 layers, n_embd 384, n_head 6, block_size 512, GPT-2 BPE, masked-diffusion
+  objective, FineWeb-Edu (`sample-10BT`). Trained on a Jetson Orin (eager mode,
+  bf16 autocast, no compile, no DDP — the Jetson torch build supports none).
+- **Runs 4+ (Spark phase)** — capacity and schedule sweeps on the DGX-Spark
+  (GB10, bf16, `torch.compile`), scaling the model and then probing the LR
+  schedule. Same masked-diffusion objective and FineWeb-Edu data throughout.
 
 ---
 
@@ -130,43 +134,118 @@ bigger hardware is.
    takes 3-41 hrs here, and each multiplicative scaling step multiplies that.
    Real capacity sweeps (50M / 150M / 1B) want the DGX-Spark.
 
+6. **The GPU saturates — batch size is not a speed knob.** On the Spark,
+   throughput is a flat ~37-41K tok/s across every `(block_size, batch)`
+   combination. Bigger batch just packs more work per step at proportionally
+   longer step time. The real speed knob is *total work* — i.e. `block_size`.
+
+7. **Capacity without a schedule fix buys nothing.** The 150M tied the 50M
+   (3.94 vs 3.92) because both ran the same too-long-stable WSD schedule.
+   Spending parameters before spending thought on the schedule is wasted
+   compute. Fix the schedule, *then* test capacity.
+
+8. **Long decay beats both short-decay and cosine.** Schedule sweep ranking:
+   WSD-long-decay (4.19) < WSD-short-decay (4.21) < cosine (4.22). A short
+   stable phase has value; holding peak LR for 80% of training does not.
+   Adopted default: `decay_iters ≈ 0.6 × max_iters`.
+
 ---
 
-## Planned next: capacity sweep on DGX-Spark
+## Run 4 — 50M · 2B tokens · 16k iters · DGX-Spark
 
-Run 3 left a clean open question: *the 30M is at its data floor — how much
-does adding capacity buy on the same 2B-token dataset?* The answer is a
-three-run sweep on the Spark, varying only model size:
+**Setup.** block_size 1024, effective batch 128, WSD warmup 500 / decay 3000,
+lr 1.2e-3. ~12 hrs on the Spark.
 
-| Run | Model | Non-emb params | Tokens | Iters | Effective batch | Est. wall-clock |
+**Result.** `ckpt_final.pt` val **3.92** (`eval.py`, 500 batches), perplexity
+**50.6**.
+
+**What we learned.**
+- Big jump vs the 30M Run 3 (4.46 → 3.92), but the comparison is confounded:
+  the Spark run sees ~4× more *effective* tokens per iter (batch 128 vs 32) and
+  finishes a full pass over the 2B set. At matched tokens-seen it's a smaller
+  gain — capacity helped, but less than the raw number suggests.
+- Same three-phase WSD shape as every Jetson run.
+
+---
+
+## Run 5 — 150M · 2B tokens · 16k iters · DGX-Spark
+
+**Setup.** Identical to Run 4 except model size (12 layers, n_embd 1024) and
+microbatch (64 × grad_accum 2 — 150M OOMs at microbatch 128). ~22 hrs.
+
+**Result.** val **3.94** — **a tie with the 50M.**
+
+**What we learned.**
+- **3× the parameters bought nothing.** The 150M landed at the same val as the
+  50M. With the schedule, LR and data held identical, the bottleneck is clearly
+  *not capacity*.
+- Chinchilla framing: 50M wants ~1B tokens (we gave 2B → over-trained), 150M
+  wants ~3B (we gave 2B → under-trained). Both converge to ~3.93 because the
+  **schedule** dominates, not the model size.
+- This killed the planned 350M run — repeating the same setup at a bigger model
+  would have burned ~24 hrs to reproduce the tie.
+
+**What this told us to do next.** Stop scaling model size; fix the schedule.
+
+---
+
+## block_size investigation — 1024 → 512
+
+A microbench on the Spark (50M, fwd+bwd, bf16) showed throughput is a flat
+~37-41K tokens/sec across every `(block_size, batch)` combination — **the GPU
+is saturated; batch size is not a speed knob.** What *is* a knob: halving
+`block_size` halves work-per-step.
+
+| block_size | batch | ms/step (compiled) | note |
+|---|---|---|---|
+| 1024 | 128 | 3640 (eager bench) | original baseline |
+| 512  | 128 | 1128 | **~3.2× faster** with compile |
+
+At 50M scale, masked-diffusion learning is local — a 512-token window loses
+almost nothing per-token. So block_size 512 became the new default: ~2× faster
+wall-clock, and `max_iters` 16k now sees ~1B tokens (Chinchilla-optimal for
+50M instead of the over-trained 2B).
+
+---
+
+## Runs 6-8 — 50M v2 schedule sweep · block_size 512 · 1B tokens
+
+Run 5 proved the schedule, not capacity, is the bottleneck. This sweep varies
+**only the LR schedule shape** — same 50M model, same block_size 512, same 1B
+tokens, same lr 1.2e-3 → 1e-5, same 16k iters. Chained autonomously overnight
+by `scripts/auto_chain_sweep.sh`.
+
+| Run | Schedule | Shape | val (eval_iters=100) |
+|---|---|---|---|
+| 6 | WSD baseline | warmup 500, stable→13k, decay 13k→16k | 4.205 |
+| 7 | Cosine | warmup 500, half-cosine 500→16k, no stable | 4.221 |
+| 8 | WSD long-decay | warmup 500, stable→6k, decay 6k→16k | **4.188** |
+
+**What we learned.**
+- **Long-decay wins; cosine loses.** The naive reading of "the stable phase is
+  wasted" predicts cosine (no stable phase at all) should win — it came *last*.
+- The real lesson is subtler: **a short stable phase has value, but the
+  original WSD held peak LR ~2× too long.** Optimum ≈ hold briefly, then spend
+  most of the budget decaying. Rule of thumb adopted: `decay_iters ≈ 0.6 ×
+  max_iters` (now the `Config` default).
+- Margins are small (~0.03 nats) — real but modest. Base-model perplexity is
+  hitting diminishing returns as an optimization target at this scale.
+
+> Note: these ~4.2 vals are worse than Run 4's 3.92 because the v2 runs see
+> 1B tokens vs Run 4's 2B — the halved-token-budget effect, not a schedule
+> regression. The sweep is internally valid (all three saw the same 1B).
+
+---
+
+## Spark scoreboard
+
+| Run | Model | block | Tokens | Schedule | Val | Perplexity |
 |---|---|---|---|---|---|---|
-| 4 | 50M  | 49.6 M | 2.1 B | 16 k | 128 seqs | ~2 hrs |
-| 5 | 150M | 151.8 M | 2.1 B | 16 k | 128 seqs | ~3 hrs |
-| 6 | 350M | 303.6 M | 2.1 B | 16 k | 128 seqs | ~5-6 hrs |
-
-Everything *except model size* is held constant — same data, same iters, same
-batch, same LR (sqrt-scaled from the Jetson runs: `6e-4 → 1.2e-3` for the
-4× larger effective batch), same WSD schedule proportions. The result is a
-**capacity curve at fixed data**, directly comparable to the 30M Run 3 point.
-
-Configs: `configs/train_50m_spark.py`, `train_150m_spark.py`, `train_350m_spark.py`.
-Launch: `bash scripts/spark_sweep.sh` (runs all three sequentially with W&B
-logging on).
-
-Three outcomes we'd interpret:
-- **Val drops sharply with each step up (e.g., 50M ≈ 4.3, 150M ≈ 4.0, 350M ≈ 3.7):**
-  the 2B-token dataset has plenty of *information* the 30M just couldn't extract.
-  Scale model on this same data is the cheap next move.
-- **Val drops then plateaus (e.g., 50M ≈ 4.3, 150M ≈ 4.1, 350M ≈ 4.05):**
-  we've hit the *data's* signal limit at this scale — more capacity is now
-  data-bound. Scale data next, on a bigger box.
-- **All three land near 4.4–4.5:** something else is the bottleneck (likely
-  the masked-diffusion objective at this scale, or block_size, or LR). Worth
-  investigating before more compute.
-
-The wall-clock budget (~10-12 hrs total) leaves headroom in a 24-40 hr window
-for either a 4th larger run (e.g., 700M) or repeating the most informative
-point with a different LR / longer schedule.
+| 4 | 50M  | 1024 | 2B | WSD 3k decay | 3.92 | 50.6 |
+| 5 | 150M | 1024 | 2B | WSD 3k decay | 3.94 | 51.4 |
+| 6 | 50M  | 512  | 1B | WSD 3k decay | 4.21 | 67 |
+| 7 | 50M  | 512  | 1B | cosine | 4.22 | 68 |
+| 8 | 50M  | 512  | 1B | WSD 10k decay | **4.19** | **66** |
 
 ---
 

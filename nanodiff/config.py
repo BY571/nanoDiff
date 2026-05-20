@@ -51,7 +51,10 @@ class Config:
     min_lr: float = 1e-5
     schedule: str = "wsd"           # "wsd" | "cosine"
     warmup_iters: int = 2000
-    decay_iters: int = 20_000       # WSD only: linear decay over the FINAL `decay_iters` steps
+    # WSD only: linear decay over the FINAL `decay_iters` steps. The 50M v2
+    # schedule sweep (2026-05) found long decay wins: ~0.6 * max_iters beat
+    # both the short 0.2 default and pure cosine. Rule of thumb: decay ~= 60%.
+    decay_iters: int = 60_000
 
     # ---- evaluation / sampling during training ----
     eval_interval: int = 1000
