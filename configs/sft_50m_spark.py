@@ -31,6 +31,8 @@ config = Config(
 
     # ---- optimization — short run, low LR (fine-tuning, not pretraining) ----
     # ~51k examples / batch 64 ~= 800 iters/epoch; 2400 iters ~= 3 epochs.
+    # NOTE: the SFT loss plateaus by ~iter 200 (see EXPERIMENTS.md Run 9) —
+    # ~500 iters is ample. 2400 is kept only to match the published checkpoint.
     batch_size=64,
     grad_accum_steps=1,
     max_iters=2_400,

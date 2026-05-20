@@ -169,6 +169,12 @@ bigger hardware is.
     genuine 50M / 2B-token limitation — and the real target for SFT and scale.
     The clean split: loops were the *sampler*; confabulation is the *model*.
 
+11. **SFT teaches format, fast — not knowledge.** Fine-tuning the base on
+    Alpaca-cleaned drove the loss 7.77 → ~1.43 within 200 iters, then flat for
+    the remaining 2200. Instruction-following is a low-entropy behavior and
+    transfers almost instantly. It does not lift the factual ceiling — the SFT
+    model answers on-topic but still confabulates. Budget SFT runs short.
+
 ---
 
 ## Run 4 — 50M · 2B tokens · 16k iters · DGX-Spark
@@ -273,6 +279,36 @@ by `scripts/auto_chain_sweep.sh`.
 | 8 | 50M  | 512  | 1B | WSD 10k decay | 4.204 | 66.9 |
 
 All Spark vals above are clean offline eval (`eval.py`, 500 batches).
+
+---
+
+## Run 9 — 50M SFT on Alpaca-cleaned
+
+The first non-pretraining run: supervised fine-tuning the Run 4 base (val 3.92)
+into an instruction-follower, via the LLaDA Algorithm 2 recipe (response-only
+masking — see `nanodiff/sft.py`).
+
+**Setup.** Init from `50m_spark/ckpt_final.pt`; dataset yahma/alpaca-cleaned
+(50,760 train / 1,000 val); prompt/response 256/256; batch 64; cosine LR
+1e-4 → 1e-5, warmup 100; 2400 iters. ~20 min on the Spark.
+
+**Result.** SFT response NLL-bound **~1.41**. The model goes from *continuing*
+text to *answering* instructions — on-topic, in the response format, ending
+cleanly when `chat.py --sft` truncates at the learned `<|endoftext|>` marker.
+Content is 50M-limited: fluent but confabulates ("founded by Louis XIV").
+
+**What we learned.**
+- **SFT format is learned almost instantly.** The loss fell 7.77 → ~1.43 by
+  iter 200 and then *barely moved* through iter 2400. SFT teaches a low-entropy
+  *format*, not knowledge — ~400 iters would have sufficed; 2400 was ~6× over.
+- **The structural win is real and complete** — instruction-following works.
+  The residual (wrong facts, occasional incoherence) is the base model's
+  capacity ceiling, exactly as Run 5 predicted; SFT cannot raise it.
+- **EOT-for-length-control works.** Padding responses with `<|endoftext|>` and
+  keeping the pads in the loss taught the model to emit an end-marker;
+  truncating the response there cleanly removes the junk tail.
+
+Published: [Sebasdi/nanodiff-50m-sft-alpaca](https://huggingface.co/Sebasdi/nanodiff-50m-sft-alpaca).
 
 ---
 
