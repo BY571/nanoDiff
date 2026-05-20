@@ -29,13 +29,13 @@ config = Config(
     # ---- SFT data (from scripts/prepare_sft_data.py) ----
     data_dir="data/alpaca_sft",
 
-    # ---- optimization — short run, low LR (fine-tuning, not pretraining) ----
-    # ~51k examples / batch 64 is ~800 iters/epoch. The SFT loss plateaus by
-    # ~iter 200, so ~500 iters is ample; 2400 is kept only to match the
-    # published checkpoint.
+    # ---- optimization — fine-tuning, not pretraining: low LR, cosine decay ----
+    # ~51k examples / batch 64 is ~800 iters/epoch. The instruction *format* is
+    # learned within ~200 iters, but the loss keeps a slow, real descent well
+    # past that — a 2.4k-iter run had not saturated, so we give it 5k.
     batch_size=64,
     grad_accum_steps=1,
-    max_iters=2_400,
+    max_iters=5_000,
     lr=1e-4,                # ~10x below the base run's 1.2e-3
     min_lr=1e-5,
     schedule="cosine",      # smooth decay, standard for fine-tuning
@@ -43,8 +43,8 @@ config = Config(
 
     # ---- evaluation / sampling ----
     eval_interval=200,
-    eval_iters=50,
-    sample_interval=400,
+    eval_iters=100,         # 100 (not 50) for a less noisy val curve
+    sample_interval=500,
 
     # ---- system ----
     device="cuda",
