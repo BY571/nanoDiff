@@ -74,6 +74,7 @@ class Config:
 
     # ---- io ----
     out_dir: str = "checkpoints/nanodiff"
+    init_from: str = ""             # SFT: path to a base checkpoint to fine-tune from
 
     # ---- logging ----
     wandb_log: bool = False         # set True to log metrics to Weights & Biases
@@ -84,6 +85,8 @@ class Config:
         head_dim = self.n_embd // self.n_head
         assert head_dim % 2 == 0, "head_dim must be even for RoPE"
         assert self.mask_token_id < self.vocab_size, "mask_token_id must fit in vocab"
-        assert self.warmup_iters + self.decay_iters <= self.max_iters, (
-            "warmup_iters + decay_iters cannot exceed max_iters"
-        )
+        if self.schedule == "wsd":
+            # decay_iters is a WSD-only knob; cosine ignores it.
+            assert self.warmup_iters + self.decay_iters <= self.max_iters, (
+                "warmup_iters + decay_iters cannot exceed max_iters"
+            )

@@ -44,3 +44,36 @@ class TokenDataset:
         else:
             x = x.to(device)
         return x
+
+
+class SFTDataset:
+    """Instruction (prompt, response) pairs for supervised fine-tuning.
+
+    Loads a .npz produced by scripts/prepare_sft_data.py — two uint16 arrays,
+    `prompts` (N, P) and `responses` (N, L), both fixed-length. Instruction sets
+    are small (~50k examples), so the whole thing lives in RAM.
+    """
+
+    def __init__(self, npz_path):
+        if not os.path.exists(npz_path):
+            raise FileNotFoundError(
+                f"{npz_path} not found — run scripts/prepare_sft_data.py first."
+            )
+        d = np.load(npz_path)
+        self.prompts = d["prompts"]          # (N, P) uint16
+        self.responses = d["responses"]      # (N, L) uint16
+
+    def __len__(self):
+        return len(self.prompts)
+
+    def get_batch(self, batch_size, device):
+        """Return (prompt_ids, response_ids) — each a (batch_size, ·) LongTensor."""
+        ix = np.random.randint(len(self.prompts), size=batch_size)
+        p = torch.from_numpy(self.prompts[ix].astype(np.int64))
+        r = torch.from_numpy(self.responses[ix].astype(np.int64))
+        if str(device).startswith("cuda"):
+            p = p.pin_memory().to(device, non_blocking=True)
+            r = r.pin_memory().to(device, non_blocking=True)
+        else:
+            p, r = p.to(device), r.to(device)
+        return p, r
