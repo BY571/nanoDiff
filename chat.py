@@ -155,10 +155,10 @@ def main():
         dt = _t.time() - _t0
         # Generated portion only; strip special tokens (MASK/padding/EOT).
         gen_ids = [t for t in out[0, len(history_ids):].tolist() if t < EOT]
-        print(f"<<< {enc.decode(gen_ids)}")
+        print(f"<<< {enc.decode(gen_ids)}\n")
         # Timing on its own dimmed line — ANSI \033[2m = dim, \033[0m = reset —
-        # so it reads as metadata below the answer, not part of it.
-        print(f"\033[2m    ({dt * 1000:.0f} ms · {len(gen_ids) / dt:.1f} tok/s)\033[0m\n")
+        # blank line above and below so it reads as metadata, not the answer.
+        print(f"\033[2m({dt * 1000:.0f} ms · {len(gen_ids) / dt:.1f} tok/s)\033[0m\n")
 
         # Append the model's continuation to history so the next turn sees it.
         history_ids = history_ids + gen_ids
