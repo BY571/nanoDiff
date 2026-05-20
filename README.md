@@ -85,6 +85,40 @@ Everything reads from the `Config` dataclass, so model code never changes.
 
 ---
 
+## Pretrained model
+
+A pretrained **50M base checkpoint** is on the Hugging Face Hub —
+**[Sebasdi/nanodiff-50m-base](https://huggingface.co/Sebasdi/nanodiff-50m-base)**
+(masked-diffusion LM, ~88M total / ~50M non-embedding params, FineWeb-Edu
+~2B tokens, validation perplexity ~50).
+
+```bash
+# download the checkpoint (~350 MB) into checkpoints/
+hf download Sebasdi/nanodiff-50m-base nanodiff-50m-base.pt --local-dir checkpoints/
+
+# chat with it (repetition penalty is on by default — see below)
+python chat.py --ckpt checkpoints/nanodiff-50m-base.pt
+```
+
+> ⚠️ **Set your expectations.** This is a **50M base model trained on only
+> ~2B tokens** — on the order of 1/100th the data a model like GPT-2 saw. It
+> is a *learning artifact*, not a usable assistant:
+>
+> - **Base model, no instruction tuning.** It *continues* text, it does not
+>   answer questions. Prompt it document-style (`"The history of Rome is"`),
+>   not question-style (`"What is the history of Rome?"`).
+> - **It confabulates freely.** The English is fluent; the facts are not
+>   reliable. At this scale the model learned grammar, not a world model.
+> - **It needs the repetition penalty.** Small diffusion LMs collapse into
+>   repetition loops under the default sampler; `chat.py` and `sample.py`
+>   enable a frequency repetition penalty (`--rep-penalty 3.0`) by default to
+>   prevent this. See [`EXPERIMENTS.md`](EXPERIMENTS.md) lesson #9.
+>
+> It is useful as a base to fine-tune, and for studying diffusion-LM training
+> and sampling dynamics — not for getting correct answers.
+
+---
+
 ## How the training step works
 
 The entire learning signal, from `train.py`:
