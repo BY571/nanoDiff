@@ -1,10 +1,10 @@
-"""Train a nanoDiff masked diffusion language model.
+"""Pretrain a nanoDiff masked diffusion language model.
 
 Single GPU:
-    python train.py --config configs/train_150m.py
+    python pretrain/train.py --config pretrain/configs/50m.py
 
-Multi-GPU / DGX-Spark node (torchrun):
-    torchrun --standalone --nproc_per_node=8 train.py --config configs/train_1b.py
+Multi-GPU (torchrun):
+    torchrun --standalone --nproc_per_node=8 pretrain/train.py --config pretrain/configs/50m.py
 
 The training step is the whole point, and it is short:
     x0          = a clean window of tokens

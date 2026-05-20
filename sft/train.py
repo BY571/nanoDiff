@@ -1,6 +1,6 @@
 """Supervised fine-tuning of a nanoDiff base model on instruction data.
 
-    python train_sft.py --config configs/sft_50m_spark.py
+    python sft/train.py --config sft/configs/50m_alpaca.py
 
 SFT is pretraining with two changes (LLaDA Algorithm 2):
   * the forward process masks only the RESPONSE span — the prompt is clean

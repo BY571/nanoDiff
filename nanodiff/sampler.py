@@ -94,7 +94,7 @@ def generate(model, prompt_ids, gen_length, steps, block_length=None,
         distribution is biased toward re-emitting a recent token. Penalising
         already-present tokens at the logit level fixes it; perturbing the
         *commit order* (random/Gumbel remasking) does NOT — the bias is in the
-        logits, not the ordering. See EXPERIMENTS.md lesson #9.
+        logits, not the ordering.
     """
     was_training = model.training
     model.eval()

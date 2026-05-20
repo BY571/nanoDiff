@@ -1,10 +1,9 @@
 """Configuration for nanoDiff.
 
 A single dataclass holds model, diffusion, data, optimizer and IO settings.
-Concrete experiments live in `configs/` and just instantiate this with overrides,
-so scaling from 150M to 1B is a one-file change:
-
-    configs/train_150m.py   ->   configs/train_1b.py
+Concrete experiments live under `pretrain/configs/` and `sft/configs/` and just
+instantiate this with overrides, so scaling up is a one-file change — copy a
+config and edit `n_layer` / `n_embd` / `n_head` / the optimizer fields.
 """
 from __future__ import annotations
 
