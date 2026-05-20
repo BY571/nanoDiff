@@ -52,9 +52,11 @@ class Config:
     schedule: str = "wsd"           # "wsd" | "cosine"
     warmup_iters: int = 2000
     # WSD only: linear decay over the FINAL `decay_iters` steps. The 50M v2
-    # schedule sweep (2026-05) found long decay wins: ~0.6 * max_iters beat
-    # both the short 0.2 default and pure cosine. Rule of thumb: decay ~= 60%.
-    decay_iters: int = 60_000
+    # schedule sweep (2026-05, clean 500-batch eval) found the decay *fraction*
+    # barely matters: 19% and 62% landed within eval noise (4.199 vs 4.204).
+    # What did matter: pure cosine (no stable phase) was ~0.05 nats worse.
+    # Takeaway: keep a stable phase; any decay fraction ~20-60% is fine.
+    decay_iters: int = 20_000
 
     # ---- evaluation / sampling during training ----
     eval_interval: int = 1000

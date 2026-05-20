@@ -144,10 +144,20 @@ bigger hardware is.
    Spending parameters before spending thought on the schedule is wasted
    compute. Fix the schedule, *then* test capacity.
 
-8. **Long decay beats both short-decay and cosine.** Schedule sweep ranking:
-   WSD-long-decay (4.19) < WSD-short-decay (4.21) < cosine (4.22). A short
-   stable phase has value; holding peak LR for 80% of training does not.
-   Adopted default: `decay_iters ≈ 0.6 × max_iters`.
+8. **The LR schedule shape is a near-flat surface — with one cliff.** Clean
+   eval: WSD-short-decay (4.199) ≈ WSD-long-decay (4.204) — the decay fraction
+   (19% vs 62%) is within noise. But cosine (4.248), with no stable phase at
+   all, is ~0.05 nats worse — a real gap. Keep *a* stable phase; its length
+   and the decay length don't matter. We spent ~15 Spark-hours to learn the
+   knob barely moves — a useful negative result, but a negative result.
+
+9. **A decent val loss can still decode to pure garbage.** The 50M base (val
+   3.92, PPL 50 — a real LM, not random) produces *only* repetition loops when
+   sampled, even on document-shaped prompts ("The capital of France is the
+   capital of France is…"). Syntax is learned; factual content and
+   non-degenerate decoding are not. The gap between PPL 50 and "loops on
+   everything" is suspiciously large — implicates the decoder, not just model
+   capacity. Unresolved as of this writing.
 
 ---
 
@@ -215,21 +225,26 @@ Run 5 proved the schedule, not capacity, is the bottleneck. This sweep varies
 tokens, same lr 1.2e-3 → 1e-5, same 16k iters. Chained autonomously overnight
 by `scripts/auto_chain_sweep.sh`.
 
-| Run | Schedule | Shape | val (eval_iters=100) |
-|---|---|---|---|
-| 6 | WSD baseline | warmup 500, stable→13k, decay 13k→16k | 4.205 |
-| 7 | Cosine | warmup 500, half-cosine 500→16k, no stable | 4.221 |
-| 8 | WSD long-decay | warmup 500, stable→6k, decay 6k→16k | **4.188** |
+| Run | Schedule | Shape | wandb (eval_iters=100) | clean eval (500 batches) |
+|---|---|---|---|---|
+| 6 | WSD baseline | warmup 500, stable→13k, decay 13k→16k | 4.205 | **4.199** |
+| 7 | Cosine | warmup 500, half-cosine 500→16k, no stable | 4.221 | 4.248 |
+| 8 | WSD long-decay | warmup 500, stable→6k, decay 6k→16k | 4.188 | 4.204 |
 
 **What we learned.**
-- **Long-decay wins; cosine loses.** The naive reading of "the stable phase is
-  wasted" predicts cosine (no stable phase at all) should win — it came *last*.
-- The real lesson is subtler: **a short stable phase has value, but the
-  original WSD held peak LR ~2× too long.** Optimum ≈ hold briefly, then spend
-  most of the budget decaying. Rule of thumb adopted: `decay_iters ≈ 0.6 ×
-  max_iters` (now the `Config` default).
-- Margins are small (~0.03 nats) — real but modest. Base-model perplexity is
-  hitting diminishing returns as an optimization target at this scale.
+- **The noisy in-loop eval lied about the ranking.** wandb's `eval_iters=100`
+  had long-decay winning by 0.017; the clean 500-batch eval put WSD-baseline
+  ahead by 0.005. Lesson #4 striking again — *always* confirm a sweep with a
+  proper offline eval before drawing conclusions.
+- **The decay fraction barely matters.** WSD-baseline (19% decay) and
+  long-decay (62% decay) landed 0.005 nats apart — pure noise. Whether you
+  decay over 3k or 10k iters is irrelevant at this scale.
+- **Cosine is genuinely worse** — 0.049 nats behind, a gap *outside* the noise
+  band. Removing the stable phase *entirely* hurts. So: keep a stable phase,
+  but its length (and the decay length) is not a sensitive knob.
+- Net: **the LR schedule shape is a near-flat optimization surface here**, with
+  one cliff (don't go full cosine). We spent ~15 Spark-hours to learn the knob
+  we were turning barely moves the needle — itself a useful negative result.
 
 > Note: these ~4.2 vals are worse than Run 4's 3.92 because the v2 runs see
 > 1B tokens vs Run 4's 2B — the halved-token-budget effect, not a schedule
@@ -243,9 +258,11 @@ by `scripts/auto_chain_sweep.sh`.
 |---|---|---|---|---|---|---|
 | 4 | 50M  | 1024 | 2B | WSD 3k decay | 3.92 | 50.6 |
 | 5 | 150M | 1024 | 2B | WSD 3k decay | 3.94 | 51.4 |
-| 6 | 50M  | 512  | 1B | WSD 3k decay | 4.21 | 67 |
-| 7 | 50M  | 512  | 1B | cosine | 4.22 | 68 |
-| 8 | 50M  | 512  | 1B | WSD 10k decay | **4.19** | **66** |
+| 6 | 50M  | 512  | 1B | WSD 3k decay | 4.199 | 66.6 |
+| 7 | 50M  | 512  | 1B | cosine | 4.248 | 70.0 |
+| 8 | 50M  | 512  | 1B | WSD 10k decay | 4.204 | 66.9 |
+
+All Spark vals above are clean offline eval (`eval.py`, 500 batches).
 
 ---
 
