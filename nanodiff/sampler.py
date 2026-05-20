@@ -59,7 +59,7 @@ def _transfer_schedule(block_length, steps, device):
 
 @torch.no_grad()
 def generate(model, prompt_ids, gen_length, steps, block_length=None,
-             temperature=0.0, top_k=None, top_p=None,
+             temperature=0.0, top_k=None, top_p=None, rep_penalty=0.0,
              remasking="low_confidence", mask_token_id=None):
     """Generate `gen_length` tokens conditioned on `prompt_ids`.
 
@@ -73,6 +73,9 @@ def generate(model, prompt_ids, gen_length, steps, block_length=None,
         top_k:        if set, keep only the k highest-prob tokens before sampling
         top_p:        if set in (0,1], nucleus sampling — keep smallest set whose
                       cumulative prob reaches top_p
+        rep_penalty:  subtract this constant from the logits of every token
+                      already present in the sequence. The fix for the
+                      repetition collapse of small diffusion LMs (see Notes).
         remasking:    "low_confidence" (LLaDA default) or "random"
         mask_token_id: override; defaults to model.config.mask_token_id
 
@@ -84,6 +87,14 @@ def generate(model, prompt_ids, gen_length, steps, block_length=None,
         The confidence score used for remasking is always computed on the
         *unfiltered* softmax — that's the model's intrinsic certainty, and we
         don't want filtering to artificially inflate it.
+
+        `rep_penalty` is the cure for the repetition collapse small/weak
+        diffusion LMs fall into ("the capital of France is the capital of
+        France is ..."). The root cause is logit-level: every masked slot's
+        distribution is biased toward re-emitting a recent token. Penalising
+        already-present tokens at the logit level fixes it; perturbing the
+        *commit order* (random/Gumbel remasking) does NOT — the bias is in the
+        logits, not the ordering. See EXPERIMENTS.md lesson #9.
     """
     was_training = model.training
     model.eval()
@@ -114,6 +125,19 @@ def generate(model, prompt_ids, gen_length, steps, block_length=None,
         for i in range(block_steps):
             is_mask = x == mask_id
             logits = model(x)
+
+            # Repetition penalty (frequency-scaled, OpenAI-style): subtract
+            # `rep_penalty * count` from each token's logits, where `count` is
+            # how many times that id already appears in x (prompt + committed).
+            # Frequency-scaling matters — a flat presence penalty can't escalate,
+            # so a model committed to spamming one token ("Cold, Cold, Cold...")
+            # never gets pushed off it. Scaling by count does: 2nd hit -2x,
+            # 3rd -3x, until a different token wins. This breaks the collapse.
+            if rep_penalty > 0:
+                token_freq = torch.zeros(B, logits.size(-1), dtype=logits.dtype, device=device)
+                token_freq.scatter_add_(1, x, torch.ones_like(x, dtype=logits.dtype))
+                logits = logits - rep_penalty * token_freq.unsqueeze(1)
+
             # The [MASK] token is an input-only sentinel — it never appears in
             # clean data, so it is never a valid generation. Forbid it, otherwise
             # the model could "predict" a mask, the commit becomes a silent no-op,

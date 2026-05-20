@@ -43,8 +43,10 @@ def main():
     p.add_argument("--top-k", type=int, default=None,
                    help="keep only the k highest-prob tokens; off by default")
     p.add_argument("--top-p", type=float, default=0.9,
-                   help="nucleus sampling cutoff; the main lever against "
-                        "repetition collapse on small base models. 1.0 disables.")
+                   help="nucleus sampling cutoff; trims the unlikely tail. 1.0 disables.")
+    p.add_argument("--rep-penalty", type=float, default=3.0,
+                   help="logit penalty on already-present tokens; the real cure "
+                        "for repetition collapse on small diffusion LMs. 0 disables.")
     p.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     p.add_argument("--dtype", default=None,
                    help="bfloat16/float16/float32; auto = bf16 on cuda, fp32 on cpu. "
@@ -80,12 +82,12 @@ def main():
           f"device={args.device}  dtype={args.dtype}  compile={args.compile}")
     print(f"gen_length={args.gen_length}  steps={args.steps}  "
           f"block_length={args.block_length}  temperature={args.temperature}  "
-          f"top_k={args.top_k}  top_p={args.top_p}")
+          f"top_k={args.top_k}  top_p={args.top_p}  rep_penalty={args.rep_penalty}")
     print("BASE model (no instruction tuning) — your turns accumulate as one document.")
     print("Commands: `!reset` to clear, `!history`, `!set <key> <value>`, `q` to quit.\n")
 
     settable = {"gen_length", "steps", "block_length", "temperature",
-                "top_k", "top_p", "seed"}
+                "top_k", "top_p", "rep_penalty", "seed"}
     history_ids: list[int] = []   # accumulated token ids across turns
 
     while True:
@@ -146,6 +148,7 @@ def main():
             temperature=args.temperature,
             top_k=args.top_k,
             top_p=args.top_p,
+            rep_penalty=args.rep_penalty,
         )
         if args.device.startswith("cuda"):
             torch.cuda.synchronize()

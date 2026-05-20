@@ -151,13 +151,23 @@ bigger hardware is.
    and the decay length don't matter. We spent ~15 Spark-hours to learn the
    knob barely moves — a useful negative result, but a negative result.
 
-9. **A decent val loss can still decode to pure garbage.** The 50M base (val
-   3.92, PPL 50 — a real LM, not random) produces *only* repetition loops when
-   sampled, even on document-shaped prompts ("The capital of France is the
-   capital of France is…"). Syntax is learned; factual content and
-   non-degenerate decoding are not. The gap between PPL 50 and "loops on
-   everything" is suspiciously large — implicates the decoder, not just model
-   capacity. Unresolved as of this writing.
+9. **The repetition collapse was the sampler — fixed by a frequency penalty.**
+   The 50M base (val 3.92, PPL 50) decoded to pure loops ("the capital of
+   France is the capital of France is…"). A controlled sweep showed why: it's
+   a *logit-level* bias — every masked slot's distribution favours re-emitting
+   a recent token. Commit-order changes (random / Gumbel-noised remasking) do
+   NOT fix it; the bias is in the logits, not the ordering. A frequency-scaled
+   repetition penalty (subtract `rep_penalty × token_count` from the logits)
+   does — the same checkpoint then produces varied, fluent English. LLaDA's
+   low-confidence remasking is fine to keep. The deeper lesson: **the LLaDA
+   sampler defaults assume a model strong enough that confidence ≈ correctness;
+   small models additionally need the repetition penalty.**
+
+10. **Sampler fixed ≠ model good.** With the repetition penalty the 50M base is
+    fluent at the sentence level but confabulates facts ("founded by Louis XIV
+    in 1515") and turns incoherent on harder prompts. That residual is the
+    genuine 50M / 2B-token limitation — and the real target for SFT and scale.
+    The clean split: loops were the *sampler*; confabulation is the *model*.
 
 ---
 

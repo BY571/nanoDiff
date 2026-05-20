@@ -29,6 +29,11 @@ def main():
                    help="semi-AR block size; default = gen-length (pure diffusion)")
     p.add_argument("--temperature", type=float, default=0.0,
                    help="0 = greedy argmax; >0 = sample")
+    p.add_argument("--top-p", type=float, default=None,
+                   help="nucleus sampling cutoff (active when temperature > 0)")
+    p.add_argument("--rep-penalty", type=float, default=3.0,
+                   help="logit penalty on already-present tokens; cures repetition "
+                        "collapse on small diffusion LMs. 0 disables.")
     p.add_argument("--remasking", default="low_confidence",
                    choices=["low_confidence", "random"])
     p.add_argument("--num-samples", type=int, default=1)
@@ -53,6 +58,7 @@ def main():
 
     out = generate(model, prompt, args.gen_length, steps=args.steps,
                    block_length=args.block_length, temperature=args.temperature,
+                   top_p=args.top_p, rep_penalty=args.rep_penalty,
                    remasking=args.remasking)
 
     for i in range(args.num_samples):
