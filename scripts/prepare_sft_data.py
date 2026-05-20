@@ -14,11 +14,6 @@ time. The padding / answer-end token is <|endoftext|> (50256).
 """
 import argparse
 import os
-import sys
-
-# Make the repo root importable when run as `python scripts/prepare_sft_data.py`
-# (sys.path[0] would otherwise be scripts/, hiding the nanodiff package).
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import numpy as np
 import tiktoken

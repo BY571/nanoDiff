@@ -50,24 +50,25 @@ tunable quality↔speed dial.
 ## Quickstart
 
 ```bash
-uv sync                       # create .venv from pyproject.toml + uv.lock
+uv sync                       # create .venv, install deps + the nanodiff package
 source .venv/bin/activate     # (or prefix the commands below with `uv run`)
-python smoke_test.py          # optional: verify the core stack works (~2 min, CPU)
+python tests/smoke_test.py    # optional: verify the core stack works (~2 min, CPU)
 
-# 1. tokenize a corpus (streams FineWeb-Edu; ~2B tokens is plenty for the 150M)
+# 1. tokenize a pretraining corpus (streams FineWeb-Edu)
 python scripts/prepare_data.py --out-dir data/fineweb_edu --num-tokens 2_000_000_000
 
-# 2. train (single GPU)
-python train.py --config configs/train_150m.py
+# 2. pretrain a base model (single GPU)
+python pretrain/train.py --config pretrain/configs/50m.py
+#    ...or multi-GPU:
+torchrun --standalone --nproc_per_node=8 pretrain/train.py --config pretrain/configs/50m.py
 
-#    ...or multi-GPU / DGX-Spark
-torchrun --standalone --nproc_per_node=8 train.py --config configs/train_1b.py
+# 3. sample / evaluate
+python sample.py --ckpt checkpoints/50m/ckpt.pt --prompt "The meaning of life is"
+python eval.py --ckpt checkpoints/50m/ckpt.pt --iters 500
 
-# 3. sample
-python sample.py --ckpt checkpoints/150m/ckpt.pt --prompt "The meaning of life is"
-
-# 4. evaluate
-python eval.py --ckpt checkpoints/150m/ckpt.pt --iters 500
+# 4. (optional) instruction-tune the base on Alpaca-cleaned
+python scripts/prepare_sft_data.py --out-dir data/alpaca_sft
+python sft/train.py --config sft/configs/50m_alpaca.py
 ```
 
 ### Scaling
@@ -75,7 +76,7 @@ python eval.py --ckpt checkpoints/150m/ckpt.pt --iters 500
 Scaling is a one-file change — copy a config and edit the model/optimizer fields:
 
 ```python
-# configs/train_350m.py
+# pretrain/configs/350m.py
 from nanodiff.config import Config
 config = Config(name="nanodiff-350m", n_layer=16, n_embd=1280, n_head=20,
                 batch_size=16, grad_accum_steps=16, out_dir="checkpoints/350m")
@@ -115,8 +116,7 @@ python chat.py --ckpt checkpoints/nanodiff-50m-sft-alpaca.pt --sft
 >   it to *answer*, not to *know*.
 > - Both **need the repetition penalty.** Small diffusion LMs collapse into
 >   repetition loops under the default sampler; `chat.py` and `sample.py` enable
->   a frequency repetition penalty (`--rep-penalty 3.0`) by default. See
->   [`EXPERIMENTS.md`](EXPERIMENTS.md) lesson #9.
+>   a frequency repetition penalty (`--rep-penalty 3.0`) by default.
 >
 > The next steps in this learning project are to **scale** — more training
 > data and larger models — which is what these small-scale runs were
@@ -126,7 +126,7 @@ python chat.py --ckpt checkpoints/nanodiff-50m-sft-alpaca.pt --sft
 
 ## How the training step works
 
-The entire learning signal, from `train.py`:
+The entire learning signal, from `pretrain/train.py`:
 
 ```python
 x0           = train_data.get_batch(...)               # clean tokens  (B, T)
@@ -138,12 +138,6 @@ loss.backward()
 
 That's it. No noise schedule, no timestep embedding (we use LLaDA's *time-free*
 parameterization — see the comment at the top of `model.py`), no ELBO bookkeeping.
-
----
-
-## Experiments
-
-Empirical findings + scaling sweep from training runs — see [`EXPERIMENTS.md`](EXPERIMENTS.md).
 
 ---
 
@@ -165,9 +159,9 @@ default working path. Swapping it means updating these spots:
 
 | File(s) | What to change |
 |---|---|
-| `scripts/prepare_data.py`, `sample.py`, `train.py` | `tiktoken.get_encoding("gpt2")` |
+| `scripts/prepare_data.py`, `sample.py`, `pretrain/train.py` | `tiktoken.get_encoding("gpt2")` |
 | `nanodiff/config.py` | `vocab_size`, `mask_token_id` (= last real id + 1, then pad) |
-| `scripts/prepare_data.py`, `sample.py`, `train.py` | `EOT` — the document-separator id |
+| `scripts/prepare_data.py`, `sample.py`, `pretrain/train.py` | `EOT` — the document-separator id |
 | `nanodiff/data.py` | `uint16` dtype caps the vocab at 65536; use `uint32` above that |
 
 **Model size — a one-file config change.** See [Scaling](#scaling) above.
@@ -176,8 +170,7 @@ default working path. Swapping it means updating these spots:
 
 ## References
 
-The recipe `nanoDiff` implements is **LLaDA**; the lineage and the papers each
-stub points to:
+The recipe `nanoDiff` implements is **LLaDA**; here is the lineage:
 
 | Paper | Year | arXiv |
 |---|---|---|

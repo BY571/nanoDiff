@@ -13,8 +13,12 @@ dependencies = [
     "wandb",
 ]
 
-# nanoDiff is an application (run train.py / sample.py / eval.py from the repo
-# root), not a library to install — so uv manages the env but doesn't build a
-# wheel for the `nanodiff/` package.
-[tool.uv]
-package = false
+# The `nanodiff/` core library is installed (editable) into the environment, so
+# the entry-point scripts under pretrain/, sft/, scripts/, and tests/ can import
+# it from anywhere. `uv sync` builds and installs it.
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["nanodiff"]

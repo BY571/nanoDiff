@@ -164,10 +164,10 @@ def main():
     print()
     if all(results):
         print(f"ALL {len(results)} CHECKS PASSED")
-        sys.exit(0)
-    print(f"{sum(results)}/{len(results)} passed — FAILURES ABOVE")
-    sys.exit(1)
+        return 0
+    print(f"{sum(not r for r in results)}/{len(results)} CHECKS FAILED")
+    return 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

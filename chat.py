@@ -22,6 +22,7 @@ REPL commands:
     >>> q / quit / exit           leave
 """
 import argparse
+import time
 
 import tiktoken
 import torch
@@ -154,7 +155,7 @@ def main():
         prompt = torch.tensor([prompt_ids], dtype=torch.long, device=args.device)
         if args.device.startswith("cuda"):
             torch.cuda.synchronize()
-        import time as _t; _t0 = _t.time()
+        t0 = time.time()
         out = generate(
             model, prompt,
             gen_length=args.gen_length,
@@ -167,7 +168,7 @@ def main():
         )
         if args.device.startswith("cuda"):
             torch.cuda.synchronize()
-        dt = _t.time() - _t0
+        dt = time.time() - t0
 
         gen = out[0, len(prompt_ids):].tolist()
         # SFT: the model is trained to emit <|endoftext|> at the answer's end —

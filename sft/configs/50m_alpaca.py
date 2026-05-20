@@ -1,16 +1,16 @@
-"""DGX-Spark · SFT the 50M base model on Alpaca-cleaned.
+"""nanoDiff · 50M · SFT config — instruction-tune the base on Alpaca-cleaned.
 
-Fine-tunes `checkpoints/50m_spark/ckpt_final.pt` (the val-3.92 base, also on
-the Hub as Sebasdi/nanodiff-50m-base) into an instruction-follower.
+Fine-tunes the 50M base checkpoint into an instruction-follower with the LLaDA
+Algorithm 2 recipe (response-only masking — see nanodiff/sft.py). This config
+trained the public SFT checkpoint
+[Sebasdi/nanodiff-50m-sft-alpaca](https://huggingface.co/Sebasdi/nanodiff-50m-sft-alpaca).
 
-Prereqs:
+From the repo root:
     python scripts/prepare_sft_data.py --out-dir data/alpaca_sft
+    python sft/train.py --config sft/configs/50m_alpaca.py
 
-Run:
-    NANODIFF_WANDB=1 python train_sft.py --config configs/sft_50m_spark.py
-
-The model architecture fields below MUST match the base checkpoint — SFT loads
-its weights with strict=True, so a mismatch fails loudly and immediately.
+The model architecture below MUST match the base checkpoint — SFT loads its
+weights with strict=True, so a mismatch fails loudly and immediately.
 """
 from nanodiff.config import Config
 
@@ -24,15 +24,15 @@ config = Config(
     block_size=1024,        # base was trained at 1024; SFT seqs (P+L=512) fit fine
 
     # ---- start from the pretrained base ----
-    init_from="checkpoints/50m_spark/ckpt_final.pt",
+    init_from="checkpoints/50m/ckpt_final.pt",
 
     # ---- SFT data (from scripts/prepare_sft_data.py) ----
     data_dir="data/alpaca_sft",
 
     # ---- optimization — short run, low LR (fine-tuning, not pretraining) ----
-    # ~51k examples / batch 64 ~= 800 iters/epoch; 2400 iters ~= 3 epochs.
-    # NOTE: the SFT loss plateaus by ~iter 200 (see EXPERIMENTS.md Run 9) —
-    # ~500 iters is ample. 2400 is kept only to match the published checkpoint.
+    # ~51k examples / batch 64 is ~800 iters/epoch. The SFT loss plateaus by
+    # ~iter 200, so ~500 iters is ample; 2400 is kept only to match the
+    # published checkpoint.
     batch_size=64,
     grad_accum_steps=1,
     max_iters=2_400,

@@ -18,3 +18,6 @@ docs/superpowers/
 
 # local-only literature review (kept on disk, not in the repo)
 sota-review/
+
+# private experiment log — kept on disk, not in the public repo
+EXPERIMENTS.md
