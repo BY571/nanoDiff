@@ -118,8 +118,9 @@ python chat.py --ckpt checkpoints/nanodiff-50m-sft-alpaca.pt --sft
 >   a frequency repetition penalty (`--rep-penalty 3.0`) by default. See
 >   [`EXPERIMENTS.md`](EXPERIMENTS.md) lesson #9.
 >
-> Useful for studying diffusion-LM training, fine-tuning, and sampling dynamics
-> — not for getting correct answers.
+> The next steps in this learning project are to **scale** — more training
+> data and larger models — which is what these small-scale runs were
+> calibrating for.
 
 ---
 
