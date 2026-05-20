@@ -1,21 +1,24 @@
-"""Interactive REPL with conversation memory — each turn sees the running history.
+"""Interactive REPL for a nanoDiff model.
 
-    python chat.py --ckpt checkpoints/30m/ckpt.pt
+    python chat.py --ckpt checkpoints/base/ckpt.pt          # base model
+    python chat.py --ckpt checkpoints/sft/ckpt.pt --sft     # SFT'd model
 
-Mental model: nanoDiff is a *base* diffusion LM (no SFT), so a "conversation" here
-is really one continuous document that grows turn by turn. Your input is appended,
-the model continues it, and the continuation is appended back. Real chat behavior
-(User/Assistant roles, instruction following) needs SFT — see nanodiff/sft.py.
+Two modes:
+  * default — base diffusion LM. A "conversation" is one continuous document
+    that grows turn by turn: your input is appended, the model continues it,
+    the continuation is appended back. Prompt it document-style.
+  * --sft — instruction-tuned model. Each turn is an independent instruction,
+    wrapped in the SFT prompt template (### Instruction / ### Response); no
+    history is accumulated, and the answer is cut at the model's EOT marker.
 
-Tip: try long-form prompts that benefit from continuation. Crank temperature for
-small/under-trained models that loop on repetition.
+Tip: crank temperature for small/under-trained models that loop on repetition.
 
 REPL commands:
-    >>> <text>                    append `<text>` to history, generate continuation
+    >>> <text>                    a turn — a doc fragment (base) or instruction (sft)
     >>> !set <key> <value>        change a knob — gen-length, steps, block-length,
-                                  temperature, seed
-    >>> !reset                    clear conversation history
-    >>> !history                  print the full running document
+                                  temperature, top-p, rep-penalty, seed
+    >>> !reset                    clear conversation history (base mode)
+    >>> !history                  print the running document (base mode)
     >>> q / quit / exit           leave
 """
 import argparse
@@ -25,6 +28,7 @@ import torch
 
 from nanodiff.model import NanoDiff
 from nanodiff.sampler import generate
+from nanodiff.sft import SFT_PROMPT_NO_INPUT
 from nanodiff.utils import load_checkpoint
 
 EOT = 50256  # <|endoftext|>; real text tokens are < EOT (50257=MASK, 50258+=padding)
@@ -33,6 +37,9 @@ EOT = 50256  # <|endoftext|>; real text tokens are < EOT (50257=MASK, 50258+=pad
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--ckpt", required=True)
+    p.add_argument("--sft", action="store_true",
+                   help="instruction-tuned model: wrap each turn in the SFT prompt "
+                        "template and treat it as a fresh, independent instruction.")
     p.add_argument("--gen-length", type=int, default=96)
     p.add_argument("--steps", type=int, default=96,
                    help="denoising steps; LLaDA-recommended sweet spot is steps≈gen-length. "
@@ -83,7 +90,10 @@ def main():
     print(f"gen_length={args.gen_length}  steps={args.steps}  "
           f"block_length={args.block_length}  temperature={args.temperature}  "
           f"top_k={args.top_k}  top_p={args.top_p}  rep_penalty={args.rep_penalty}")
-    print("BASE model (no instruction tuning) — your turns accumulate as one document.")
+    if args.sft:
+        print("SFT model — each turn is an independent instruction (no history).")
+    else:
+        print("BASE model (no instruction tuning) — turns accumulate as one document.")
     print("Commands: `!reset` to clear, `!history`, `!set <key> <value>`, `q` to quit.\n")
 
     settable = {"gen_length", "steps", "block_length", "temperature",
@@ -123,20 +133,25 @@ def main():
                 print(f"  parse error: {e}\n")
             continue
 
-        # Append the user's turn to the running document (newline-separated).
-        new_user_ids = enc.encode(user, allowed_special={"<|endoftext|>"})
-        sep = enc.encode("\n") if history_ids else []
-        history_ids = history_ids + sep + new_user_ids
+        # Build this turn's prompt.
+        if args.sft:
+            # SFT model: wrap the instruction in the template; no history.
+            prompt_str = SFT_PROMPT_NO_INPUT.format(instruction=user)
+            prompt_ids = enc.encode(prompt_str, allowed_special={"<|endoftext|>"})
+        else:
+            # Base model: append the turn to the running document (newline-sep).
+            new_user_ids = enc.encode(user, allowed_special={"<|endoftext|>"})
+            sep = enc.encode("\n") if history_ids else []
+            history_ids = history_ids + sep + new_user_ids
+            # Keep the prompt within the context window; slide from the left.
+            max_prompt_len = cfg.block_size - args.gen_length
+            if max_prompt_len <= 0:
+                raise ValueError("gen_length must be < block_size")
+            if len(history_ids) > max_prompt_len:
+                history_ids = history_ids[-max_prompt_len:]
+            prompt_ids = history_ids
 
-        # Keep prompt within the model's context window, leaving room for the
-        # generation. Slide the window from the left if needed.
-        max_prompt_len = cfg.block_size - args.gen_length
-        if max_prompt_len <= 0:
-            raise ValueError("gen_length must be < block_size")
-        if len(history_ids) > max_prompt_len:
-            history_ids = history_ids[-max_prompt_len:]
-
-        prompt = torch.tensor([history_ids], dtype=torch.long, device=args.device)
+        prompt = torch.tensor([prompt_ids], dtype=torch.long, device=args.device)
         if args.device.startswith("cuda"):
             torch.cuda.synchronize()
         import time as _t; _t0 = _t.time()
@@ -153,15 +168,21 @@ def main():
         if args.device.startswith("cuda"):
             torch.cuda.synchronize()
         dt = _t.time() - _t0
-        # Generated portion only; strip special tokens (MASK/padding/EOT).
-        gen_ids = [t for t in out[0, len(history_ids):].tolist() if t < EOT]
+
+        gen = out[0, len(prompt_ids):].tolist()
+        # SFT: the model is trained to emit <|endoftext|> at the answer's end —
+        # truncate there to cut the junk tail a weak model rambles into.
+        if args.sft and EOT in gen:
+            gen = gen[:gen.index(EOT)]
+        gen_ids = [t for t in gen if t < EOT]   # drop MASK / padding / stray specials
         print(f"<<< {enc.decode(gen_ids)}\n")
         # Timing on its own dimmed line — ANSI \033[2m = dim, \033[0m = reset —
         # blank line above and below so it reads as metadata, not the answer.
         print(f"\033[2m({dt * 1000:.0f} ms · {len(gen_ids) / dt:.1f} tok/s)\033[0m\n")
 
-        # Append the model's continuation to history so the next turn sees it.
-        history_ids = history_ids + gen_ids
+        # Base model: append the continuation so the next turn sees it.
+        if not args.sft:
+            history_ids = history_ids + gen_ids
 
 
 if __name__ == "__main__":
