@@ -24,6 +24,62 @@ import torch
 import torch.nn.functional as F
 
 
+# Prompt templates. The trailing "### Response:\n" is the generation cue — at
+# inference the model is conditioned on the prompt up to and including it, then
+# denoises the response region. Kept deliberately lean (no verbose preamble):
+# a 50M model has little capacity to spend on boilerplate.
+SFT_PROMPT_NO_INPUT = "### Instruction:\n{instruction}\n\n### Response:\n"
+SFT_PROMPT_WITH_INPUT = (
+    "### Instruction:\n{instruction}\n\n### Input:\n{input}\n\n### Response:\n"
+)
+
+
+def encode_sft_example(instruction, input_text, output, enc,
+                       prompt_len, response_len, eot_id):
+    """Encode one instruction example into fixed-length (prompt, response) ids.
+
+    The prompt is **right-aligned**: truncated from the LEFT and left-padded
+    with `eot_id`, so the "### Response:" cue always lands at the end and the
+    response always begins at position `prompt_len`.
+
+    The response is **left-aligned**: an `eot_id` end-marker is appended, then
+    it is truncated from the RIGHT / right-padded with `eot_id`. Those pad
+    tokens stay in the SFT loss — that is what teaches the model to emit EOT
+    and control its own answer length.
+
+    Args:
+        instruction:  the task instruction (str)
+        input_text:   optional extra context (str; blank -> no Input block)
+        output:       the target response (str)
+        enc:          a tiktoken encoding
+        prompt_len:   fixed prompt length P
+        response_len: fixed response length L
+        eot_id:       <|endoftext|> id — used for padding and as the end-marker
+
+    Returns:
+        (prompt_ids, response_ids) — python int lists of length P and L.
+    """
+    if input_text and input_text.strip():
+        prompt_str = SFT_PROMPT_WITH_INPUT.format(instruction=instruction,
+                                                  input=input_text)
+    else:
+        prompt_str = SFT_PROMPT_NO_INPUT.format(instruction=instruction)
+
+    prompt = enc.encode(prompt_str)
+    if len(prompt) > prompt_len:
+        prompt = prompt[-prompt_len:]                    # keep the end (the cue)
+    else:
+        prompt = [eot_id] * (prompt_len - len(prompt)) + prompt
+
+    response = enc.encode(output) + [eot_id]             # EOT marks the answer's end
+    if len(response) > response_len:
+        response = response[:response_len]               # keep the start
+    else:
+        response = response + [eot_id] * (response_len - len(response))
+
+    return prompt, response
+
+
 def sft_forward_process(prompt_ids, response_ids, mask_token_id, t_eps=1e-3, t=None):
     """Corrupt only the RESPONSE span of a (prompt, response) pair.
 

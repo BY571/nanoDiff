@@ -1,4 +1,4 @@
-"""Tests for the SFT forward process and loss (nanodiff/sft.py).
+"""Tests for the SFT forward process, loss, and data encoding (nanodiff/sft.py).
 
 Same standalone-assertion style as smoke_test.py — run directly, exits
 non-zero on any failure so it doubles as a CI gate.
@@ -7,9 +7,10 @@ non-zero on any failure so it doubles as a CI gate.
 """
 import sys
 
+import tiktoken
 import torch
 
-from nanodiff.sft import sft_forward_process, sft_loss
+from nanodiff.sft import sft_forward_process, sft_loss, encode_sft_example
 
 MASK_ID = 127
 
@@ -102,6 +103,63 @@ def main():
     results.append(check(
         "loss: gradient flows to logits",
         logits.grad is not None and torch.isfinite(logits.grad).all().item()))
+
+    # ---- encode_sft_example -----------------------------------------------
+    enc = tiktoken.get_encoding("gpt2")
+    EOT = 50256
+    PL, RL = 64, 96
+
+    # short example, no input
+    p, r = encode_sft_example("Name a color.", "", "Blue.", enc, PL, RL, EOT)
+    results.append(check(
+        "encode: prompt/response have the fixed lengths",
+        len(p) == PL and len(r) == RL))
+
+    results.append(check(
+        "encode: short prompt is LEFT-padded with EOT",
+        p[0] == EOT and p[-1] != EOT))
+
+    results.append(check(
+        "encode: short response is RIGHT-padded with EOT",
+        r[-1] == EOT and r[0] != EOT))
+
+    results.append(check(
+        "encode: prompt carries the instruction text",
+        "Name a color." in enc.decode(p)))
+
+    results.append(check(
+        "encode: prompt ends with the '### Response:' generation cue",
+        enc.decode(p).rstrip().endswith("### Response:")))
+
+    results.append(check(
+        "encode: response begins with the output text",
+        enc.decode(r).startswith("Blue.")))
+
+    # the answer is followed by an EOT end-marker before the padding
+    results.append(check(
+        "encode: an EOT end-marker follows the answer",
+        EOT in r and r.index(EOT) == len(enc.encode("Blue."))))
+
+    # example WITH an input field
+    p2, _ = encode_sft_example("Translate to French.", "Hello world",
+                               "Bonjour le monde.", enc, PL, RL, EOT)
+    results.append(check(
+        "encode: the input field appears in the prompt",
+        "Hello world" in enc.decode(p2)))
+
+    # long output -> response truncated from the right, exact length kept
+    long_out = " ".join(["word"] * 500)
+    _, r3 = encode_sft_example("Say words.", "", long_out, enc, PL, RL, EOT)
+    results.append(check(
+        "encode: over-long response is truncated to exactly response_len",
+        len(r3) == RL and enc.decode(r3).startswith("word word")))
+
+    # long prompt -> truncated from the left, the '### Response:' cue survives
+    long_instr = " ".join(["explain"] * 500)
+    p4, _ = encode_sft_example(long_instr, "", "ok", enc, PL, RL, EOT)
+    results.append(check(
+        "encode: over-long prompt truncates from the left, keeps the cue",
+        len(p4) == PL and enc.decode(p4).rstrip().endswith("### Response:")))
 
     print()
     if all(results):
