@@ -88,39 +88,62 @@ Everything reads from the `Config` dataclass, so model code never changes.
 
 ## Pretrained models
 
-Two pretrained checkpoints are on the Hugging Face Hub:
+Three pretrained checkpoints are on the Hugging Face Hub:
 
 | Model | What it is |
 |---|---|
 | [Sebasdi/nanodiff-50m-base](https://huggingface.co/Sebasdi/nanodiff-50m-base) | the 50M base — pretrained on ~2B tokens of FineWeb-Edu (val perplexity ~50) |
-| [Sebasdi/nanodiff-50m-sft-alpaca](https://huggingface.co/Sebasdi/nanodiff-50m-sft-alpaca) | the base, instruction-tuned on Alpaca-cleaned (~51k examples) |
+| [Sebasdi/nanodiff-150m-base](https://huggingface.co/Sebasdi/nanodiff-150m-base) | the 150M base — pretrained on ~3B tokens of FineWeb-Edu (val perplexity ~44) |
+| [Sebasdi/nanodiff-50m-sft-alpaca](https://huggingface.co/Sebasdi/nanodiff-50m-sft-alpaca) | the 50M base, instruction-tuned on Alpaca-cleaned (~51k examples) |
 
 ```bash
-# base model — continues text, document-style
+# 50M base — continues text, document-style
 hf download Sebasdi/nanodiff-50m-base nanodiff-50m-base.pt --local-dir checkpoints/
 python chat.py --ckpt checkpoints/nanodiff-50m-base.pt
 
-# SFT model — follows instructions (note the --sft flag)
+# 150M base — same as the 50M, just larger
+hf download Sebasdi/nanodiff-150m-base nanodiff-150m-base.pt --local-dir checkpoints/
+python chat.py --ckpt checkpoints/nanodiff-150m-base.pt
+
+# 50M SFT — follows instructions (note the --sft flag)
 hf download Sebasdi/nanodiff-50m-sft-alpaca nanodiff-50m-sft-alpaca.pt --local-dir checkpoints/
 python chat.py --ckpt checkpoints/nanodiff-50m-sft-alpaca.pt --sft
 ```
 
-> ⚠️ **Set your expectations.** These are **50M-parameter models trained on
-> ~2B tokens** — on the order of 1/100th the data a model like GPT-2 saw. They
-> are *learning artifacts*, not usable assistants:
+> ⚠️ **Set your expectations.** These are **small models** (50M-150M params)
+> trained on 2-3B tokens — on the order of 1/100th the data a model like GPT-2
+> saw. They are *learning artifacts*, not usable assistants:
 >
-> - The **base** model *continues* text — prompt it document-style
+> - The **base** models *continue* text — prompt them document-style
 >   (`"The history of Rome is"`), not question-style.
 > - The **SFT** model follows instructions (`chat.py --sft`), but at 50M params
 >   it **confabulates freely** — fluent English, unreliable facts. SFT taught
 >   it to *answer*, not to *know*.
-> - Both **need the repetition penalty.** Small diffusion LMs collapse into
+> - **All need the repetition penalty.** Small diffusion LMs collapse into
 >   repetition loops under the default sampler; `chat.py` and `sample.py` enable
 >   a frequency repetition penalty (`--rep-penalty 3.0`) by default.
->
-> The next steps in this learning project are to **scale** — more training
-> data and larger models — which is what these small-scale runs were
-> calibrating for.
+
+### Scaling
+
+A small, controlled scaling result so far. All numbers are from `eval.py`
+(500 batches on a held-out FineWeb-Edu split):
+
+| Model | Tokens | Val NLL | Perplexity |
+|---|---:|---:|---:|
+| 50M | 2B | 3.92 | 50.6 |
+| 50M *(matched-token control)* | 3B | 3.91 | 50.1 |
+| **150M** | **3B** | **3.78** | **43.8** |
+
+At matched 3B tokens — same `block_size`, same schedule, same data shard, only
+the model and its appropriately-scaled LR differ — the **150M wins by 0.13 nats
+(~13% perplexity)**. The control row is what makes that defensible: it shows
+the 50M, given the *same* 3B-token budget, only moves its loss by ~0.01 nats
+versus its 2B baseline. The 50M is essentially capacity-floored at ~3.91; the
+150M lands *below* that floor. So the gap is **capacity, cleanly isolated** —
+not "trained longer" and not "saw more tokens."
+
+Next rung on the ladder: 350M, Chinchilla-optimal at ~7B tokens — pending a
+hardened data prep (the 10B streaming run crashed at 3.36B last time).
 
 ---
 
