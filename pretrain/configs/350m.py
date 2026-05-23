@@ -62,4 +62,9 @@ config = Config(
 
     # ---- io ----
     out_dir="checkpoints/350m",
+
+    # ---- logging ----
+    # Multi-day run — make wandb a config-level commitment, not a launch-time
+    # env-var that's easy to forget (which is exactly what bit us once already).
+    wandb_log=True,
 )
