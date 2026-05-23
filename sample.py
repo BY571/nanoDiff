@@ -36,6 +36,13 @@ def main():
                         "collapse on small diffusion LMs. 0 disables.")
     p.add_argument("--remasking", default="low_confidence",
                    choices=["low_confidence", "random"])
+    p.add_argument("--use-cache", action="store_true",
+                   help="Fast-dLLM prefix K/V cache (approximate, ~1.2x speedup "
+                        "at gen>=256).")
+    p.add_argument("--tau", type=float, default=None,
+                   help="Fast-dLLM threshold decoding; commit every active "
+                        "position with confidence >= tau. ~1.45x speedup at "
+                        "tau=0.5. Best with --use-cache.")
     p.add_argument("--num-samples", type=int, default=1)
     p.add_argument("--device", default="cuda")
     p.add_argument("--seed", type=int, default=1337)
@@ -59,7 +66,8 @@ def main():
     out = generate(model, prompt, args.gen_length, steps=args.steps,
                    block_length=args.block_length, temperature=args.temperature,
                    top_p=args.top_p, rep_penalty=args.rep_penalty,
-                   remasking=args.remasking)
+                   remasking=args.remasking,
+                   use_cache=args.use_cache, tau=args.tau)
 
     for i in range(args.num_samples):
         ids = [tok for tok in out[i].tolist() if tok < EOT]   # drop special/mask tokens

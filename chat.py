@@ -62,6 +62,15 @@ def main():
     p.add_argument("--compile", action="store_true",
                    help="torch.compile(model) for kernel fusion. ~2-3x faster after a "
                         "one-time ~20s warmup on the first generation.")
+    p.add_argument("--use-cache", action="store_true",
+                   help="Fast-dLLM prefix K/V cache. Approximate (LAMBADA -0.02pp); "
+                        "helps most at gen>=256 or batch>=4. Off by default.")
+    p.add_argument("--tau", type=float, default=None,
+                   help="Fast-dLLM threshold parallel decoding (Lou et al. 2025). "
+                        "Commit every active position with confidence >= tau instead "
+                        "of the fixed schedule. Best with --use-cache. tau=0.5 gives "
+                        "~1.45x speedup on the default workload; lower = faster, "
+                        "looser quality bar.")
     p.add_argument("--seed", type=int, default=None)
     args = p.parse_args()
 
@@ -165,6 +174,8 @@ def main():
             top_k=args.top_k,
             top_p=args.top_p,
             rep_penalty=args.rep_penalty,
+            use_cache=args.use_cache,
+            tau=args.tau,
         )
         if args.device.startswith("cuda"):
             torch.cuda.synchronize()
