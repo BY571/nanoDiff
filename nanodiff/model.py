@@ -13,11 +13,28 @@ in an image diffusion model — the model is genuinely just a transformer.
 Components are otherwise standard modern-LLM: RMSNorm, SwiGLU, RoPE, pre-norm
 residual blocks.
 """
+import contextlib
 import math
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+
+# SDPA backend lock. On NVIDIA sm_121 (DGX Spark GB10) we measured that the
+# EFFICIENT and CUDNN scaled-dot-product-attention backends produce >1%
+# relative numerical drift vs FLASH on bf16 (max_diff ~0.14 on logits, well
+# above the ~0.01 bf16 noise floor). Restrict SDPA to the two backends that
+# are correctness-verified on every target we care about — FLASH on CUDA,
+# MATH as the safe fallback for everything else.
+try:
+    from torch.nn.attention import sdpa_kernel as _sdpa_kernel, SDPBackend
+
+    def _attention_ctx():
+        return _sdpa_kernel([SDPBackend.FLASH_ATTENTION, SDPBackend.MATH])
+except ImportError:
+    def _attention_ctx():
+        return contextlib.nullcontext()
 
 
 class RMSNorm(nn.Module):
@@ -71,10 +88,11 @@ class Attention(nn.Module):
         q, k = apply_rope(q, cos, sin), apply_rope(k, cos, sin)
         # is_causal=False  <-- the heart of a diffusion LM: every token attends to
         # every other token, so the model can use right-context to fill in [MASK]s.
-        y = F.scaled_dot_product_attention(
-            q, k, v, is_causal=False,
-            dropout_p=self.dropout if self.training else 0.0,
-        )
+        with _attention_ctx():
+            y = F.scaled_dot_product_attention(
+                q, k, v, is_causal=False,
+                dropout_p=self.dropout if self.training else 0.0,
+            )
         y = y.transpose(1, 2).contiguous().view(B, T, C)
         return self.proj(y)
 

@@ -179,7 +179,11 @@ def main():
         print(f"<<< {enc.decode(gen_ids)}\n")
         # Timing on its own dimmed line — ANSI \033[2m = dim, \033[0m = reset —
         # blank line above and below so it reads as metadata, not the answer.
-        print(f"\033[2m({dt * 1000:.0f} ms · {len(gen_ids) / dt:.1f} tok/s)\033[0m\n")
+        # tok/s is RAW (gen_length / dt), not post-truncation: the model did
+        # `gen_length` tokens of work regardless of how many survive EOT
+        # truncation. The "answer N tok" suffix shows the post-trim count.
+        print(f"\033[2m({dt * 1000:.0f} ms · {args.gen_length / dt:.0f} tok/s"
+              f" · answer {len(gen_ids)} tok)\033[0m\n")
 
         # Base model: append the continuation so the next turn sees it.
         if not args.sft:
