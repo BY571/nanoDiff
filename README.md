@@ -54,7 +54,7 @@ uv sync                       # create .venv, install deps + the nanodiff packag
 source .venv/bin/activate     # (or prefix the commands below with `uv run`)
 python tests/smoke_test.py    # optional: verify the core stack works (~2 min, CPU)
 
-# 1. tokenize a pretraining corpus (streams FineWeb-Edu)
+# 1. tokenize a pretraining corpus (downloads FineWeb-Edu, then tokenizes)
 python scripts/prepare_data.py --out-dir data/fineweb_edu --num-tokens 2_000_000_000
 
 # 2. pretrain a base model (single GPU)

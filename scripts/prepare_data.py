@@ -1,8 +1,14 @@
 """Download and tokenize a pretraining corpus into uint16 .bin shards.
 
-Default corpus: a slice of HuggingFaceFW/fineweb-edu (streamed, so no full download).
-Tokenizer: the GPT-2 BPE via tiktoken. Output: <out-dir>/train.bin and <out-dir>/val.bin,
-each a flat little-endian uint16 array of token ids that nanodiff/data.py memory-maps.
+Default corpus: a slice of HuggingFaceFW/fineweb-edu. The dataset is downloaded
+locally (not streamed) — `datasets` retries downloads file-by-file, which is
+the reliability the on-demand stream lacked: a 10B-token streaming prep died
+mid-run at ~3.36B when its httpx client got closed. The local cache also makes
+re-runs essentially free.
+
+Tokenizer: the GPT-2 BPE via tiktoken. Output: <out-dir>/train.bin and
+<out-dir>/val.bin, each a flat little-endian uint16 array of token ids that
+nanodiff/data.py memory-maps.
 
     python scripts/prepare_data.py --out-dir data/fineweb_edu --num-tokens 2_000_000_000
 
@@ -12,7 +18,6 @@ process at training time.
 """
 import argparse
 import os
-import sys
 
 import numpy as np
 import tiktoken
@@ -51,7 +56,9 @@ def main():
 
     os.makedirs(args.out_dir, exist_ok=True)
     enc = tiktoken.get_encoding("gpt2")
-    dataset = load_dataset(args.dataset, name=args.subset, split="train", streaming=True)
+    # Non-streaming: download all shards first (with built-in retry), then iterate
+    # from the local cache. Robust for multi-billion-token preps.
+    dataset = load_dataset(args.dataset, name=args.subset, split="train")
 
     def token_stream():
         """Yield per-document token id lists, each terminated by <|endoftext|>."""
@@ -67,12 +74,6 @@ def main():
     write_split(os.path.join(args.out_dir, "val.bin"), stream, val_target, "val")
     write_split(os.path.join(args.out_dir, "train.bin"), stream, args.num_tokens, "train")
     print("done.")
-
-    # The `datasets` streaming reader leaves background threads that can crash
-    # during interpreter shutdown (a known datasets/fsspec teardown issue). The
-    # .bin files are already closed and flushed, so exit hard to skip finalization.
-    sys.stdout.flush()
-    os._exit(0)
 
 
 if __name__ == "__main__":
