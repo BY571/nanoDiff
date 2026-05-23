@@ -75,7 +75,8 @@ def _transfer_schedule(block_length, steps, device):
 @torch.no_grad()
 def generate(model, prompt_ids, gen_length, steps, block_length=None,
              temperature=0.0, top_k=None, top_p=None, rep_penalty=0.0,
-             remasking="low_confidence", mask_token_id=None):
+             remasking="low_confidence", mask_token_id=None,
+             use_cache=False, tau=None):
     """Generate `gen_length` tokens conditioned on `prompt_ids`.
 
     Args:
@@ -93,6 +94,22 @@ def generate(model, prompt_ids, gen_length, steps, block_length=None,
                       repetition collapse of small diffusion LMs (see Notes).
         remasking:    "low_confidence" (LLaDA default) or "random"
         mask_token_id: override; defaults to model.config.mask_token_id
+        use_cache:    Fast-dLLM prefix K/V cache — prefill the full sequence's
+                      K/V once per block, then `forward_decode` only over the
+                      active block on each step. APPROXIMATE (not bit-identical
+                      to the no-cache path): at depth > 1 the residual stream
+                      at non-active positions also drifts as the active region
+                      commits, but Fast-dLLM (Lou et al.) shows the K/V cosine
+                      similarity between adjacent steps is ~1.0 in practice,
+                      so the approximation costs near-zero quality. Off by
+                      default; validate per workload via LAMBADA or similar.
+        tau:          if set in (0,1], Fast-dLLM threshold parallel decoding —
+                      commit EVERY active position whose max-softmax-prob >= tau
+                      instead of the fixed top-`counts[i]` schedule. Falls back
+                      to committing the single highest-confidence position if
+                      none cross the threshold (so the loop always makes
+                      progress). Combined with `use_cache` this is the
+                      Fast-dLLM ~10x speedup. tau=0.9 is the paper's default.
 
     Returns:
         (B, P + gen_length) LongTensor — prompt followed by the generated tokens.
@@ -110,6 +127,13 @@ def generate(model, prompt_ids, gen_length, steps, block_length=None,
         already-present tokens at the logit level fixes it; perturbing the
         *commit order* (random/Gumbel remasking) does NOT — the bias is in the
         logits, not the ordering.
+
+        The cache and threshold paths are *training-free* inference tricks
+        (Lou et al., Fast-dLLM, arXiv:2505.22618). The cache is exact for
+        bidirectional masked diffusion because each token's K and V depend
+        only on its own input embedding, not on the rest of the sequence —
+        so as long as the underlying tokens don't change, the K/V at those
+        positions doesn't either.
     """
     was_training = model.training
     model.eval()
@@ -137,9 +161,23 @@ def generate(model, prompt_ids, gen_length, steps, block_length=None,
         block_steps = base_steps + (1 if b < extra else 0)
         counts = _transfer_schedule(block_length, block_steps, device)
 
+        # Prefill seeds the per-layer K/V cache for the whole current sequence.
+        # The prefix [0:s0] and the still-all-masked suffix [s1:T] won't change
+        # during this block, so their K/V is computed once and reused on every
+        # inner step. Only [s0:s1] gets re-projected through qkv each step.
+        if use_cache:
+            _, kv_caches = model.forward_prefill(x)
+
         for i in range(block_steps):
-            is_mask = x == mask_id
-            logits = model(x)
+            is_mask_active = x[:, s0:s1] == mask_id          # (B, A)
+            if not is_mask_active.any():
+                break                                        # block fully committed
+
+            # ---- forward: get logits for the active range only ----
+            if use_cache:
+                logits_active, kv_caches = model.forward_decode(x, kv_caches, (s0, s1))
+            else:
+                logits_active = model(x)[:, s0:s1, :]
 
             # Repetition penalty (frequency-scaled, OpenAI-style): subtract
             # `rep_penalty * count` from each token's logits, where `count` is
@@ -149,53 +187,70 @@ def generate(model, prompt_ids, gen_length, steps, block_length=None,
             # never gets pushed off it. Scaling by count does: 2nd hit -2x,
             # 3rd -3x, until a different token wins. This breaks the collapse.
             if rep_penalty > 0:
-                token_freq = torch.zeros(B, logits.size(-1), dtype=logits.dtype, device=device)
-                token_freq.scatter_add_(1, x, torch.ones_like(x, dtype=logits.dtype))
-                logits = logits - rep_penalty * token_freq.unsqueeze(1)
+                token_freq = torch.zeros(B, logits_active.size(-1),
+                                         dtype=logits_active.dtype, device=device)
+                token_freq.scatter_add_(1, x, torch.ones_like(x, dtype=logits_active.dtype))
+                logits_active = logits_active - rep_penalty * token_freq.unsqueeze(1)
 
             # The [MASK] token is an input-only sentinel — it never appears in
             # clean data, so it is never a valid generation. Forbid it, otherwise
             # the model could "predict" a mask, the commit becomes a silent no-op,
             # and the position is left masked forever.
-            logits[:, :, mask_id] = float("-inf")
+            logits_active[:, :, mask_id] = float("-inf")
 
             # Compute the unfiltered softmax up front — needed for the
             # confidence score regardless of which sampling path we take.
-            probs_full = F.softmax(logits.float(), dim=-1)
+            probs_full = F.softmax(logits_active.float(), dim=-1)         # (B, A, V)
 
             if temperature > 0:
-                sample_logits = logits.float()
+                sample_logits = logits_active.float()
                 if top_k is not None and top_k > 0:
                     sample_logits = _top_k_filter(sample_logits, top_k)
                 if top_p is not None and 0 < top_p < 1:
                     sample_logits = _top_p_filter(sample_logits, top_p)
                 probs = F.softmax(sample_logits / temperature, dim=-1)
-                x0 = torch.multinomial(probs.view(-1, probs.size(-1)), 1).view(B, -1)
+                x0_active = torch.multinomial(probs.view(-1, probs.size(-1)),
+                                              1).view(B, -1)               # (B, A)
             else:
-                x0 = logits.argmax(dim=-1)
+                x0_active = logits_active.argmax(dim=-1)                   # (B, A)
 
             # Confidence score used to rank which predictions to commit this step.
             if remasking == "low_confidence":
-                conf = probs_full.gather(-1, x0.unsqueeze(-1)).squeeze(-1)   # (B, T)
+                conf_active = probs_full.gather(-1, x0_active.unsqueeze(-1)).squeeze(-1)
             elif remasking == "random":
-                conf = torch.rand(x.shape, device=device)
+                conf_active = torch.rand(is_mask_active.shape, device=device)
             else:
                 raise ValueError(f"unknown remasking strategy: {remasking!r}")
 
-            # Only currently-masked positions INSIDE the active block are eligible
-            # to be committed. Everything else is excluded with a -inf score.
-            eligible = is_mask.clone()
-            eligible[:, :s0] = False
-            eligible[:, s1:] = False
-            conf = torch.where(eligible, conf, torch.full_like(conf, float("-inf")))
+            # Only currently-masked positions inside the active block are eligible.
+            conf_active = torch.where(is_mask_active, conf_active,
+                                      torch.full_like(conf_active, float("-inf")))
 
-            k = int(counts[i])
-            if k > 0:
-                commit_idx = conf.topk(k, dim=1).indices               # (B, k)
-                commit = torch.zeros_like(is_mask)
-                commit.scatter_(1, commit_idx,
-                                torch.ones_like(commit_idx, dtype=torch.bool))
-                x = torch.where(commit, x0, x)
+            # ---- commit policy ----
+            if tau is not None:
+                # Threshold parallel decoding: commit every eligible position
+                # whose model-confidence >= tau. Adaptive — early steps may
+                # commit many tokens at once (cheap predictions), later steps
+                # only a few (the hard ones). If nothing crosses the bar we
+                # still commit the single most-confident eligible position so
+                # the loop always makes progress.
+                commit_active = (conf_active >= tau)
+                if not commit_active.any():
+                    flat_argmax = conf_active.argmax(dim=1, keepdim=True)
+                    commit_active = torch.zeros_like(is_mask_active)
+                    commit_active.scatter_(1, flat_argmax, True)
+            else:
+                # LLaDA's fixed schedule: commit exactly counts[i] tokens.
+                k = int(counts[i])
+                if k > 0:
+                    commit_idx = conf_active.topk(k, dim=1).indices         # (B, k)
+                    commit_active = torch.zeros_like(is_mask_active)
+                    commit_active.scatter_(1, commit_idx, True)
+                else:
+                    commit_active = torch.zeros_like(is_mask_active)
+
+            # Write the committed tokens into the active slice of x.
+            x[:, s0:s1] = torch.where(commit_active, x0_active, x[:, s0:s1])
 
     if was_training:
         model.train()

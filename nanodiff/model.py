@@ -79,7 +79,9 @@ class Attention(nn.Module):
         self.proj = nn.Linear(config.n_embd, config.n_embd, bias=config.bias)
         self.dropout = config.dropout
 
-    def forward(self, x, cos, sin):
+    def forward(self, x, cos, sin, return_kv=False):
+        """Standard forward. When `return_kv=True`, also return the RoPE-rotated
+        K and V tensors so the caller can seed a Fast-dLLM cache."""
         B, T, C = x.shape
         q, k, v = self.qkv(x).split(C, dim=2)
         q = q.view(B, T, self.n_head, self.head_dim).transpose(1, 2)
@@ -94,7 +96,57 @@ class Attention(nn.Module):
                 dropout_p=self.dropout if self.training else 0.0,
             )
         y = y.transpose(1, 2).contiguous().view(B, T, C)
-        return self.proj(y)
+        y = self.proj(y)
+        return (y, k, v) if return_kv else y
+
+    def forward_active(self, x_active, cos_active, sin_active, kv_cache, active_range):
+        """Fast-dLLM forward: compute attention only over the active range, reusing
+        cached K/V for the non-active positions.
+
+        Args:
+            x_active:    (B, A, C)               — input embeddings ONLY for the
+                                                   active positions [s0, s1)
+            cos_active:  (1, 1, A, head_dim)     — RoPE rotations for [s0, s1)
+            sin_active:  (1, 1, A, head_dim)     — RoPE rotations for [s0, s1)
+            kv_cache:    (K, V) tuple,
+                         each (B, n_head, T, head_dim)  — already RoPE-rotated,
+                         covers the full sequence [0, T). We OVERWRITE [s0:s1].
+            active_range: (s0, s1)
+
+        Returns:
+            y_active:    (B, A, C)               — attention output for active positions
+            new_kv:      (K', V') with the same full-T shape, updated at [s0:s1]
+        """
+        B, A, C = x_active.shape
+        s0, s1 = active_range
+        K_cached, V_cached = kv_cache
+
+        # Q, K, V for the active range only — single qkv linear over A tokens
+        # instead of T. That's where the cache pays for itself.
+        q, k_new, v_new = self.qkv(x_active).split(C, dim=2)
+        q     = q.view    (B, A, self.n_head, self.head_dim).transpose(1, 2)
+        k_new = k_new.view(B, A, self.n_head, self.head_dim).transpose(1, 2)
+        v_new = v_new.view(B, A, self.n_head, self.head_dim).transpose(1, 2)
+        q     = apply_rope(q,     cos_active, sin_active)
+        k_new = apply_rope(k_new, cos_active, sin_active)
+
+        # Merge fresh K/V at [s0:s1] into the cached full-T tensors. Clone so the
+        # caller's cache isn't mutated (cheap relative to attention; see commit
+        # message for the alternative in-place strategy).
+        K = K_cached.clone()
+        V = V_cached.clone()
+        K[:, :, s0:s1, :] = k_new
+        V[:, :, s0:s1, :] = v_new
+
+        # Attention: A queries × T keys/values. The output is only for the
+        # active positions, which is the second source of cache savings.
+        with _attention_ctx():
+            y = F.scaled_dot_product_attention(
+                q, K, V, is_causal=False,
+                dropout_p=self.dropout if self.training else 0.0,
+            )
+        y = y.transpose(1, 2).contiguous().view(B, A, C)
+        return self.proj(y), K, V
 
 
 class SwiGLU(nn.Module):
@@ -123,10 +175,26 @@ class Block(nn.Module):
         self.mlp_norm = RMSNorm(config.n_embd)
         self.mlp = SwiGLU(config)
 
-    def forward(self, x, cos, sin):
+    def forward(self, x, cos, sin, return_kv=False):
+        """Standard block forward. When `return_kv=True`, also return the
+        attention layer's (K, V) — used to populate the Fast-dLLM cache."""
+        if return_kv:
+            attn_out, k, v = self.attn(self.attn_norm(x), cos, sin, return_kv=True)
+            x = x + attn_out
+            x = x + self.mlp(self.mlp_norm(x))
+            return x, (k, v)
         x = x + self.attn(self.attn_norm(x), cos, sin)
         x = x + self.mlp(self.mlp_norm(x))
         return x
+
+    def forward_active(self, x_active, cos_active, sin_active, kv_cache, active_range):
+        """Fast-dLLM decode: operate only on the active range, reusing kv_cache."""
+        attn_out, K_new, V_new = self.attn.forward_active(
+            self.attn_norm(x_active), cos_active, sin_active, kv_cache, active_range
+        )
+        x_active = x_active + attn_out
+        x_active = x_active + self.mlp(self.mlp_norm(x_active))
+        return x_active, (K_new, V_new)
 
 
 class NanoDiff(nn.Module):
@@ -174,6 +242,58 @@ class NanoDiff(nn.Module):
             x = block(x, cos, sin)
         x = self.norm(x)
         return self.lm_head(x)
+
+    def forward_prefill(self, idx):
+        """Run a full forward AND return per-layer K/V caches.
+
+        Used to seed a Fast-dLLM cache at the start of a block: the prompt and
+        all already-committed blocks contribute K/V that won't change during
+        the upcoming block's denoising steps, so we compute them once here and
+        reuse via `forward_decode` for every subsequent step in the block.
+
+        Returns: (logits (B, T, V), kv_caches: list of (K, V) per layer)
+        """
+        B, T = idx.shape
+        assert T <= self.config.block_size, f"sequence length {T} > block_size"
+        x = self.drop(self.tok_emb(idx))
+        cos = self.rope_cos[:T].view(1, 1, T, -1).to(x.dtype)
+        sin = self.rope_sin[:T].view(1, 1, T, -1).to(x.dtype)
+        kv_caches = []
+        for block in self.blocks:
+            x, kv = block(x, cos, sin, return_kv=True)
+            kv_caches.append(kv)
+        x = self.norm(x)
+        return self.lm_head(x), kv_caches
+
+    def forward_decode(self, idx, kv_caches, active_range):
+        """Fast-dLLM decode: emit logits ONLY for positions in `active_range`,
+        reusing kv_caches for K/V at non-active positions.
+
+        Args:
+            idx:         (B, T) — the full current sequence (used to read the
+                                  active-region embeddings; non-active positions
+                                  are ignored because K/V is cached).
+            kv_caches:   list of (K, V) per layer, each (B, n_head, T, head_dim),
+                         RoPE-rotated. Returned by a prior `forward_prefill`.
+            active_range: (s0, s1) — half-open slice of positions to recompute.
+
+        Returns: (logits_active (B, s1-s0, V), new_kv_caches with [s0:s1] updated)
+        """
+        B, T = idx.shape
+        s0, s1 = active_range
+        # Embed only the active range — saves the per-layer qkv/proj/MLP work
+        # on the non-active positions (which is the whole point of the cache).
+        x_active = self.drop(self.tok_emb(idx[:, s0:s1]))
+        cos_active = self.rope_cos[s0:s1].view(1, 1, s1 - s0, -1).to(x_active.dtype)
+        sin_active = self.rope_sin[s0:s1].view(1, 1, s1 - s0, -1).to(x_active.dtype)
+        new_kv_caches = []
+        for block, kv in zip(self.blocks, kv_caches):
+            x_active, new_kv = block.forward_active(
+                x_active, cos_active, sin_active, kv, (s0, s1)
+            )
+            new_kv_caches.append(new_kv)
+        x_active = self.norm(x_active)
+        return self.lm_head(x_active), new_kv_caches
 
     def get_num_params(self, non_embedding: bool = True) -> int:
         n = sum(p.numel() for p in self.parameters())
