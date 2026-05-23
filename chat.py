@@ -60,8 +60,11 @@ def main():
                    help="bfloat16/float16/float32; auto = bf16 on cuda, fp32 on cpu. "
                         "Matches training dtype for ~2x speedup on GPU.")
     p.add_argument("--compile", action="store_true",
-                   help="torch.compile(model) for kernel fusion. ~2-3x faster after a "
-                        "one-time ~20s warmup on the first generation.")
+                   help="torch.compile(model) for kernel fusion. ~1.4x faster, "
+                        "stacks with --steps 32 to ~4.4x. One-time ~5-30s warmup "
+                        "on the first generation (depends on Inductor cache state). "
+                        "Skip --use-cache when using --compile — they target the "
+                        "same overhead and don't stack.")
     p.add_argument("--use-cache", action="store_true",
                    help="Fast-dLLM prefix K/V cache. Approximate (LAMBADA -0.02pp); "
                         "helps most at gen>=256 or batch>=4. Off by default.")

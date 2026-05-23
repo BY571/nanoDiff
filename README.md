@@ -130,15 +130,17 @@ python chat.py --ckpt checkpoints/nanodiff-150m-sft-alpaca.pt --sft
 
 ### Sampling speed
 
-Three opt-in flags make `chat.py` and `sample.py` substantially faster on the
+Four opt-in flags make `chat.py` and `sample.py` substantially faster on the
 same checkpoints. Measured on the 150M SFT (DGX Spark / GB10), `chat.py`
 default sampling settings (`temp=0.8 top-p=0.9 rep-penalty=3 gen-length=96`):
 
 | Configuration | tok/s | Speedup |
 |---|---:|---:|
-| `chat.py --ckpt ... --sft` (baseline) | 236 | 1.00× |
+| baseline | 236 | 1.00× |
 | `--use-cache --tau 0.5` | 355 | 1.51× |
-| `--steps 32` | **657** | **2.78×** |
+| `--steps 32` | 657 | 2.78× |
+| `--compile` | 320 | 1.36× |
+| **`--compile --steps 32`** | **1034** | **4.38×** |
 
 What each flag does:
 
@@ -157,14 +159,18 @@ What each flag does:
   process"). Quality holds at `--steps 32`; below ~24 some across-step
   doubling reappears because the base `rep_penalty` takes a few steps to
   build up against a strongly-favored repeating token.
+- **`--compile`** — `torch.compile(model)` for kernel fusion. ~1.4× alone,
+  ~4.4× combined with `--steps 32`. One-time ~5–30 s warmup on the first
+  generation (depends on Inductor cache state); skip it for one-off
+  generations, take it for interactive sessions.
 
-The fastest *single* setting depends on the workload: at low `--steps` the
-cache's infrastructure cost matches its savings, so pick *either* `--steps 32`
-*or* `--use-cache --tau`. At long generations (`--gen-length≥256`) the cache
-keeps winning.
+`--use-cache --tau` and `--compile` target the same overhead (kernel-launch
+latency) and don't stack — pick one. The headline combo is
+**`--compile --steps 32`** at ~1000 tok/s.
 
 ```bash
-python chat.py --ckpt checkpoints/nanodiff-150m-sft-alpaca.pt --sft --steps 32
+python chat.py --ckpt checkpoints/nanodiff-150m-sft-alpaca.pt --sft \
+    --compile --steps 32
 ```
 
 ### Scaling
