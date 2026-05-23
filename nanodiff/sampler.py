@@ -226,6 +226,26 @@ def generate(model, prompt_ids, gen_length, steps, block_length=None,
             conf_active = torch.where(is_mask_active, conf_active,
                                       torch.full_like(conf_active, float("-inf")))
 
+            # Within-step repetition penalty. When the step commits more than one
+            # position (low steps budget OR threshold mode), independently-decided
+            # positions can collide on the same token ("process process", "the the"),
+            # because the sequence-wide `rep_penalty` only fires BETWEEN steps. Here
+            # we identify same-token collisions IN THIS STEP and penalise the
+            # losers' confidence so the winner gets committed and the others fall
+            # out of the top-K. Only active when rep_penalty > 0 — opting into
+            # rep_penalty signals "I care about non-repetition" so extending the
+            # rule within-step is the consistent choice.
+            if rep_penalty > 0:
+                V = logits_active.size(-1)
+                token_max_conf = torch.full((B, V), float("-inf"),
+                                            dtype=conf_active.dtype, device=device)
+                token_max_conf.scatter_reduce_(1, x0_active, conf_active,
+                                               reduce="amax", include_self=False)
+                position_token_max = token_max_conf.gather(1, x0_active)   # (B, A)
+                is_winner = conf_active >= position_token_max
+                conf_active = torch.where(is_winner, conf_active,
+                                          conf_active - rep_penalty)
+
             # ---- commit policy ----
             if tau is not None:
                 # Threshold parallel decoding: commit every eligible position
