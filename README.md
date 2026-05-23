@@ -128,6 +128,45 @@ python chat.py --ckpt checkpoints/nanodiff-150m-sft-alpaca.pt --sft
 >   repetition loops under the default sampler; `chat.py` and `sample.py` enable
 >   a frequency repetition penalty (`--rep-penalty 3.0`) by default.
 
+### Sampling speed
+
+Three opt-in flags make `chat.py` and `sample.py` substantially faster on the
+same checkpoints. Measured on the 150M SFT (DGX Spark / GB10), `chat.py`
+default sampling settings (`temp=0.8 top-p=0.9 rep-penalty=3 gen-length=96`):
+
+| Configuration | tok/s | Speedup |
+|---|---:|---:|
+| `chat.py --ckpt ... --sft` (baseline) | 236 | 1.00× |
+| `--use-cache --tau 0.5` | 355 | 1.51× |
+| `--steps 32` | **657** | **2.78×** |
+
+What each flag does:
+
+- **`--use-cache`** — Fast-dLLM block-wise K/V prefix cache
+  ([Lou et al., 2025](https://arxiv.org/abs/2505.22618)). The prompt and any
+  previously-committed blocks contribute K/V that don't change during the
+  active block's denoising, so we compute them once per block and reuse them.
+  Approximate but measured LAMBADA-equivalent (15.74% → 15.72%, 1/5153
+  examples). Pays off most at `--gen-length≥256` or batched generation.
+- **`--tau 0.5`** — confidence-threshold parallel decoding. Commits *every*
+  position with model-confidence ≥ τ in this step instead of the fixed-rate
+  LLaDA schedule. Lower τ → more parallel commits → faster.
+- **`--steps 32`** — fewer denoising iterations (default 96). The sampler
+  applies a **within-step repetition penalty** so multiple positions
+  committed in the same step don't collide on the same token ("process
+  process"). Quality holds at `--steps 32`; below ~24 some across-step
+  doubling reappears because the base `rep_penalty` takes a few steps to
+  build up against a strongly-favored repeating token.
+
+The fastest *single* setting depends on the workload: at low `--steps` the
+cache's infrastructure cost matches its savings, so pick *either* `--steps 32`
+*or* `--use-cache --tau`. At long generations (`--gen-length≥256`) the cache
+keeps winning.
+
+```bash
+python chat.py --ckpt checkpoints/nanodiff-150m-sft-alpaca.pt --sft --steps 32
+```
+
 ### Scaling
 
 A small, controlled scaling result so far. All numbers are from `eval.py`
