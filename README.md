@@ -239,6 +239,39 @@ parameterization — see the comment at the top of `model.py`), no ELBO bookkeep
 
 ---
 
+## How sampling works
+
+Generation is iterative un-masking, from `nanodiff/sampler.py`:
+
+```python
+x = prompt + [MASK] * gen_length
+for step in range(steps):
+    logits = model(x)                       # predict every position at once
+    conf   = softmax(logits).max(-1)        # per-position certainty
+    # commit the K most-confident currently-masked positions:
+    x[topk(conf masked to MASK positions, K)] = argmax(logits)[those positions]
+```
+
+The schedule sets K: with `steps == gen_length` (default), K=1 — one token
+committed per step; with `steps=32, gen_length=96`, K≈3 per step. The
+`block_length` knob splits the generation into semi-AR chunks (default 32,
+so three blocks) that get filled in sequence — `block_length = gen_length`
+is pure diffusion, `block_length = 1` is strict left-to-right.
+
+The risk at small `steps`: two positions in the same step can independently
+commit the **same** token ("process process"), because the standard
+`rep_penalty` only sees prior-step commits. The sampler counters this with
+a **within-step rep_penalty** — same-token collisions are broken by
+penalising the loser's confidence so it falls out of the top-K. That makes
+`--steps 32` safe (see [Sampling speed](#sampling-speed)); below ~24 some
+across-step doubling reappears.
+
+> Note: `--steps` (denoising iterations within *one generation*) is unrelated
+> to `max_iters` in training configs (optimizer iterations across the
+> *dataset*). Same word, different loop.
+
+---
+
 ## Training customization
 
 **Dataset — fully swappable.** The pipeline only ever sees a flat `uint16` token
