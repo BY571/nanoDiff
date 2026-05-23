@@ -88,13 +88,14 @@ Everything reads from the `Config` dataclass, so model code never changes.
 
 ## Pretrained models
 
-Three pretrained checkpoints are on the Hugging Face Hub:
+Four pretrained checkpoints are on the Hugging Face Hub:
 
 | Model | What it is |
 |---|---|
 | [Sebasdi/nanodiff-50m-base](https://huggingface.co/Sebasdi/nanodiff-50m-base) | the 50M base — pretrained on ~2B tokens of FineWeb-Edu (val perplexity ~50) |
 | [Sebasdi/nanodiff-150m-base](https://huggingface.co/Sebasdi/nanodiff-150m-base) | the 150M base — pretrained on ~3B tokens of FineWeb-Edu (val perplexity ~44) |
 | [Sebasdi/nanodiff-50m-sft-alpaca](https://huggingface.co/Sebasdi/nanodiff-50m-sft-alpaca) | the 50M base, instruction-tuned on Alpaca-cleaned (~51k examples) |
+| [Sebasdi/nanodiff-150m-sft-alpaca](https://huggingface.co/Sebasdi/nanodiff-150m-sft-alpaca) | the 150M base, instruction-tuned on Alpaca-cleaned — meaningfully better than the 50M SFT (LAMBADA 15.74% vs 14.32%) |
 
 ```bash
 # 50M base — continues text, document-style
@@ -108,6 +109,10 @@ python chat.py --ckpt checkpoints/nanodiff-150m-base.pt
 # 50M SFT — follows instructions (note the --sft flag)
 hf download Sebasdi/nanodiff-50m-sft-alpaca nanodiff-50m-sft-alpaca.pt --local-dir checkpoints/
 python chat.py --ckpt checkpoints/nanodiff-50m-sft-alpaca.pt --sft
+
+# 150M SFT — same recipe, scaled up
+hf download Sebasdi/nanodiff-150m-sft-alpaca nanodiff-150m-sft-alpaca.pt --local-dir checkpoints/
+python chat.py --ckpt checkpoints/nanodiff-150m-sft-alpaca.pt --sft
 ```
 
 > ⚠️ **Set your expectations.** These are **small models** (50M-150M params)
@@ -116,9 +121,9 @@ python chat.py --ckpt checkpoints/nanodiff-50m-sft-alpaca.pt --sft
 >
 > - The **base** models *continue* text — prompt them document-style
 >   (`"The history of Rome is"`), not question-style.
-> - The **SFT** model follows instructions (`chat.py --sft`), but at 50M params
->   it **confabulates freely** — fluent English, unreliable facts. SFT taught
->   it to *answer*, not to *know*.
+> - The **SFT** models follow instructions (`chat.py --sft`), but even at 150M
+>   params they **confabulate freely** — fluent English, unreliable facts. SFT
+>   taught them to *answer*, not to *know*.
 > - **All need the repetition penalty.** Small diffusion LMs collapse into
 >   repetition loops under the default sampler; `chat.py` and `sample.py` enable
 >   a frequency repetition penalty (`--rep-penalty 3.0`) by default.
@@ -142,8 +147,33 @@ versus its 2B baseline. The 50M is essentially capacity-floored at ~3.91; the
 150M lands *below* that floor. So the gap is **capacity, cleanly isolated** —
 not "trained longer" and not "saw more tokens."
 
-Next rung on the ladder: 350M, Chinchilla-optimal at ~7B tokens — pending a
-hardened data prep (the 10B streaming run crashed at 3.36B last time).
+Next rung on the ladder: 350M, Chinchilla-optimal at ~7B tokens — config
+([`pretrain/configs/350m.py`](pretrain/configs/350m.py)) and 10B-token data
+shard ready; launch queued.
+
+### Benchmarks
+
+[LAMBADA last-word prediction](benchmark/README.md) on the public test split
+(5153 examples; single-pass diffusion scoring — see `benchmark/lambada.py`):
+
+| Model | LAMBADA acc | LAMBADA PPL |
+|---|---:|---:|
+| 50M base | 19.83% | 834 |
+| 50M SFT | 14.32% | 3344 |
+| **150M base** | **21.89%** | **358** |
+| **150M SFT** | **15.74%** | **1606** |
+
+Two things to notice. **Capacity helps both stages:** the 150M beats the 50M
+on LAMBADA accuracy at both the base level (+2.06 pp) and the SFT level
+(+1.42 pp), and lowers perplexity by ~2.3× / ~2.1× respectively. **The
+alignment tax is roughly constant in *relative* terms:** going base → SFT
+costs 27.8% of base accuracy at 50M (19.83 → 14.32) and 28.1% at 150M
+(21.89 → 15.74). So scaling capacity buys you a better SFT model in
+absolute terms but does *not* shrink the relative alignment tax — the SFT
+distribution shift is, to first order, capacity-independent.
+
+(MMLU, HellaSwag, ARC sit at random chance at 50–150M scale, so they're
+not run yet — see `benchmark/README.md` for the rationale.)
 
 ---
 
