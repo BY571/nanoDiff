@@ -131,13 +131,14 @@ python chat.py --ckpt checkpoints/nanodiff-150m-sft-alpaca.pt --sft
 ### Sampling speed
 
 `chat.py` defaults to the validated fast preset (`--compile --steps 32
---block-length 16`) and `sample.py` defaults to compile-on. On the 150M SFT
+--block-length 32`) and `sample.py` defaults to compile-on. On the 150M SFT
 (DGX Spark / GB10, sampling at `temp=0.8 top-p=0.9 rep-penalty=3 gen-length=96`):
 
 | Configuration | tok/s | Speedup |
 |---|---:|---:|
 | pre-optimization baseline | 236 | 1.00× |
-| **`chat.py` default** (`--compile --steps 32`) | **1034** | **4.38×** |
+| **`chat.py` default** (`--compile --steps 32`) | **965** | **4.09×** |
+| `--block-length 16` (faster, but short answers on casual prompts) | 1038 | 4.40× |
 | `--no-compile --steps 96` (max quality, no warmup) | 236 | 1.00× |
 | `--no-compile --use-cache --tau 0.5` (compile-free fast) | 355 | 1.51× |
 

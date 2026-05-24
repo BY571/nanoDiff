@@ -47,9 +47,13 @@ def main():
                         "validated fast preset with the sampler's within-step rep_penalty "
                         "preventing word-doubling. Bump to 96 (==gen-length) for the "
                         "LLaDA-recommended one-commit-per-step quality maximum (~3x slower).")
-    p.add_argument("--block-length", type=int, default=16,
+    p.add_argument("--block-length", type=int, default=32,
                    help="semi-AR block size (<= gen-length); smaller = more AR-like. "
-                        "Default 16 pairs with steps=32 for the validated fast preset.")
+                        "Default 32 pairs with steps=32 (3 commits/step, 3 blocks of "
+                        "32). Smaller values like 16 force the model to wrap responses "
+                        "inside the first block — visible as short answers on casual "
+                        "prompts. Larger values trade per-block parallelism but give "
+                        "the model more 'lookahead' for EOT placement.")
     p.add_argument("--temperature", type=float, default=0.8)
     p.add_argument("--top-k", type=int, default=None,
                    help="keep only the k highest-prob tokens; off by default")
