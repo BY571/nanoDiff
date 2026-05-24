@@ -168,6 +168,11 @@ What each flag does:
 latency) and don't stack — pick one. The headline combo is
 **`--compile --steps 32`** at ~1000 tok/s.
 
+> Each of these speedups, and the deferred ones from the literature, is tracked
+> in [`IMPROVEMENTS.md`](IMPROVEMENTS.md) with its source, commit, and measured
+> impact — that's the canonical place to look up "where did this come from"
+> for any optimization in the codebase.
+
 ```bash
 python chat.py --ckpt checkpoints/nanodiff-150m-sft-alpaca.pt --sft \
     --compile --steps 32
