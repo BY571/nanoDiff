@@ -22,5 +22,8 @@ sota-review/
 # private experiment log — kept on disk, not in the public repo
 EXPERIMENTS.md
 
+# private provenance ledger for speed/architecture changes
+IMPROVEMENTS.md
+
 # X-post draft — scratch, not part of the repo
 x_post/
