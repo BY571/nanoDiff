@@ -21,6 +21,19 @@ REPL commands:
     >>> !history                  print the running document (base mode)
     >>> q / quit / exit           leave
 """
+# Persistent Inductor compile cache. PyTorch's default cache directory is
+# /tmp/torchinductor_<user>, which is wiped on reboot — so the ~5-30s
+# "compiling kernels…" warmup happens on every cold start. Pointing the
+# cache at a stable location under ~/.cache makes the second-and-later
+# invocations near-instant. Must be set BEFORE `import torch` so the env
+# var is picked up at inductor config init. `setdefault` respects any
+# user override.
+import os
+os.environ.setdefault(
+    "TORCHINDUCTOR_CACHE_DIR",
+    os.path.expanduser("~/.cache/nanodiff/torchinductor"),
+)
+
 import argparse
 import time
 

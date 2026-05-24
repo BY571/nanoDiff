@@ -7,6 +7,16 @@
     python sample.py --ckpt checkpoints/150m/ckpt.pt --prompt "Once upon a time" \\
         --gen-length 256 --steps 256 --block-length 32 --temperature 0.7
 """
+# Persistent Inductor compile cache. PyTorch's default at /tmp gets wiped
+# on reboot; pointing the cache under ~/.cache makes cold-start near-zero
+# after the first invocation. Must precede `import torch`. See chat.py
+# for the longer rationale.
+import os
+os.environ.setdefault(
+    "TORCHINDUCTOR_CACHE_DIR",
+    os.path.expanduser("~/.cache/nanodiff/torchinductor"),
+)
+
 import argparse
 
 import torch
