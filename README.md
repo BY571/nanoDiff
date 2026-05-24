@@ -130,48 +130,37 @@ python chat.py --ckpt checkpoints/nanodiff-150m-sft-alpaca.pt --sft
 
 ### Sampling speed
 
-Four opt-in flags make `chat.py` and `sample.py` substantially faster on the
-same checkpoints. Measured on the 150M SFT (DGX Spark / GB10), `chat.py`
-default sampling settings (`temp=0.8 top-p=0.9 rep-penalty=3 gen-length=96`):
+`chat.py` defaults to the validated fast preset (`--compile --steps 32
+--block-length 16`) and `sample.py` defaults to compile-on. On the 150M SFT
+(DGX Spark / GB10, sampling at `temp=0.8 top-p=0.9 rep-penalty=3 gen-length=96`):
 
 | Configuration | tok/s | Speedup |
 |---|---:|---:|
-| baseline | 236 | 1.00× |
-| `--use-cache --tau 0.5` | 355 | 1.51× |
-| `--steps 32` | 657 | 2.78× |
-| `--compile` | 320 | 1.36× |
-| **`--compile --steps 32`** | **1034** | **4.38×** |
+| pre-optimization baseline | 236 | 1.00× |
+| **`chat.py` default** (`--compile --steps 32`) | **1034** | **4.38×** |
+| `--no-compile --steps 96` (max quality, no warmup) | 236 | 1.00× |
+| `--no-compile --use-cache --tau 0.5` (compile-free fast) | 355 | 1.51× |
 
-What each flag does:
+The flags:
 
+- **`--compile` / `--no-compile`** — `torch.compile(model)` for kernel fusion.
+  Default **ON**. One-time ~5–30 s warmup on the first generation; subsequent
+  generations are ~1.4× faster. Pass `--no-compile` to skip the warmup for
+  one-off queries or on builds without Triton.
+- **`--steps`** — denoising iterations. Default **32** (~3 commits per step
+  at gen-length=96). The sampler applies a **within-step repetition
+  penalty** so multiple positions committed in the same step don't collide
+  on the same token ("process process"). Bump to `--steps 96` for the LLaDA
+  one-commit-per-step quality maximum (~3× slower). Below `--steps 24`
+  some across-step doubling reappears.
 - **`--use-cache`** — Fast-dLLM block-wise K/V prefix cache
-  ([Lou et al., 2025](https://arxiv.org/abs/2505.22618)). The prompt and any
-  previously-committed blocks contribute K/V that don't change during the
-  active block's denoising, so we compute them once per block and reuse them.
-  Approximate but measured LAMBADA-equivalent (15.74% → 15.72%, 1/5153
-  examples). Pays off most at `--gen-length≥256` or batched generation.
-- **`--tau 0.5`** — confidence-threshold parallel decoding. Commits *every*
-  position with model-confidence ≥ τ in this step instead of the fixed-rate
-  LLaDA schedule. Lower τ → more parallel commits → faster.
-- **`--steps 32`** — fewer denoising iterations (default 96). The sampler
-  applies a **within-step repetition penalty** so multiple positions
-  committed in the same step don't collide on the same token ("process
-  process"). Quality holds at `--steps 32`; below ~24 some across-step
-  doubling reappears because the base `rep_penalty` takes a few steps to
-  build up against a strongly-favored repeating token.
-- **`--compile`** — `torch.compile(model)` for kernel fusion. ~1.4× alone,
-  ~4.4× combined with `--steps 32`. One-time ~5–30 s warmup on the first
-  generation (depends on Inductor cache state); skip it for one-off
-  generations, take it for interactive sessions.
-
-`--use-cache --tau` and `--compile` target the same overhead (kernel-launch
-latency) and don't stack — pick one. The headline combo is
-**`--compile --steps 32`** at ~1000 tok/s.
-
-```bash
-python chat.py --ckpt checkpoints/nanodiff-150m-sft-alpaca.pt --sft \
-    --compile --steps 32
-```
+  ([Lou et al., 2025](https://arxiv.org/abs/2505.22618)). Approximate but
+  measured LAMBADA-equivalent (15.74% → 15.72%, 1/5153). Pays off at
+  `--gen-length≥256` or batched generation; **skip when `--compile` is on**
+  (they target the same overhead and don't stack).
+- **`--tau 0.5`** — confidence-threshold parallel decoding. Commits every
+  position with model-confidence ≥ τ in this step instead of the fixed
+  schedule. Best with `--use-cache` (i.e., on the compile-free path).
 
 ### Scaling
 

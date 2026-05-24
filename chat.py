@@ -42,11 +42,14 @@ def main():
                    help="instruction-tuned model: wrap each turn in the SFT prompt "
                         "template and treat it as a fresh, independent instruction.")
     p.add_argument("--gen-length", type=int, default=96)
-    p.add_argument("--steps", type=int, default=96,
-                   help="denoising steps; LLaDA-recommended sweet spot is steps≈gen-length. "
-                        "Set higher for quality (slower), lower for speed (quality drops fast).")
-    p.add_argument("--block-length", type=int, default=32,
-                   help="semi-AR block size (<= gen-length); smaller = more AR-like")
+    p.add_argument("--steps", type=int, default=32,
+                   help="denoising steps. Default 32 (3 commits/step at gen=96) — the "
+                        "validated fast preset with the sampler's within-step rep_penalty "
+                        "preventing word-doubling. Bump to 96 (==gen-length) for the "
+                        "LLaDA-recommended one-commit-per-step quality maximum (~3x slower).")
+    p.add_argument("--block-length", type=int, default=16,
+                   help="semi-AR block size (<= gen-length); smaller = more AR-like. "
+                        "Default 16 pairs with steps=32 for the validated fast preset.")
     p.add_argument("--temperature", type=float, default=0.8)
     p.add_argument("--top-k", type=int, default=None,
                    help="keep only the k highest-prob tokens; off by default")
@@ -59,12 +62,14 @@ def main():
     p.add_argument("--dtype", default=None,
                    help="bfloat16/float16/float32; auto = bf16 on cuda, fp32 on cpu. "
                         "Matches training dtype for ~2x speedup on GPU.")
-    p.add_argument("--compile", action="store_true",
-                   help="torch.compile(model) for kernel fusion. ~1.4x faster, "
-                        "stacks with --steps 32 to ~4.4x. One-time ~5-30s warmup "
-                        "on the first generation (depends on Inductor cache state). "
-                        "Skip --use-cache when using --compile — they target the "
-                        "same overhead and don't stack.")
+    p.add_argument("--compile", action=argparse.BooleanOptionalAction, default=True,
+                   help="torch.compile(model) for kernel fusion. Default ON — ~1.4x "
+                        "faster, stacks with --steps 32 to ~4.4x. One-time ~5-30s "
+                        "warmup on the first generation (depends on Inductor cache "
+                        "state). Use --no-compile to disable (e.g. for a one-off "
+                        "query where the warmup isn't worth it, or on a build without "
+                        "Triton). Skip --use-cache when using --compile — they target "
+                        "the same overhead and don't stack.")
     p.add_argument("--use-cache", action="store_true",
                    help="Fast-dLLM prefix K/V cache. Approximate (LAMBADA -0.02pp); "
                         "helps most at gen>=256 or batch>=4. Off by default.")
@@ -92,8 +97,20 @@ def main():
     model.to(args.device, dtype=dtype).eval()
 
     if args.compile:
-        print("compiling kernels (one-time ~20s warmup on first generation)…")
-        model = torch.compile(model)
+        # torch.compile is default-on for the fast preset, but the surrounding
+        # ergonomics matter: any environment without a working Triton (some
+        # Jetson / ARM builds, very old PyTorch) would otherwise crash before
+        # the user sees a prompt. Suppress dynamo errors so we degrade to
+        # eager instead of dying. The first generation prints the warmup
+        # delay; subsequent turns are fast.
+        print("compiling kernels (one-time ~5-30s warmup on first generation; "
+              "pass --no-compile to skip)…")
+        try:
+            import torch._dynamo as _dynamo
+            _dynamo.config.suppress_errors = True
+            model = torch.compile(model)
+        except Exception as e:
+            print(f"  torch.compile unavailable, falling back to eager: {e}")
 
     enc = tiktoken.get_encoding("gpt2")
 

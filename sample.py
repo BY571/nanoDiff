@@ -36,9 +36,15 @@ def main():
                         "collapse on small diffusion LMs. 0 disables.")
     p.add_argument("--remasking", default="low_confidence",
                    choices=["low_confidence", "random"])
+    p.add_argument("--compile", action=argparse.BooleanOptionalAction, default=True,
+                   help="torch.compile(model). Default ON — ~1.4x faster after a "
+                        "one-time ~5-30s warmup. Pass --no-compile for a one-off "
+                        "single sample where the warmup isn't worth it, or on a "
+                        "build without Triton.")
     p.add_argument("--use-cache", action="store_true",
                    help="Fast-dLLM prefix K/V cache (approximate, ~1.2x speedup "
-                        "at gen>=256).")
+                        "at gen>=256). Skip when --compile is on — they target "
+                        "the same overhead.")
     p.add_argument("--tau", type=float, default=None,
                    help="Fast-dLLM threshold decoding; commit every active "
                         "position with confidence >= tau. ~1.45x speedup at "
@@ -54,6 +60,16 @@ def main():
     model = NanoDiff(cfg)
     model.load_state_dict(ckpt["model"])
     model.to(args.device).eval()
+    if args.compile:
+        # Default-on; degrade to eager if Triton/Inductor unavailable rather
+        # than crashing before the user sees output.
+        print("compiling kernels (one-time ~5-30s warmup; pass --no-compile to skip)…")
+        try:
+            import torch._dynamo as _dynamo
+            _dynamo.config.suppress_errors = True
+            model = torch.compile(model)
+        except Exception as e:
+            print(f"  torch.compile unavailable, falling back to eager: {e}")
 
     enc = tiktoken.get_encoding("gpt2")
     if args.prompt:
