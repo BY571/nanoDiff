@@ -103,6 +103,17 @@ def main():
         # the user sees a prompt. Suppress dynamo errors so we degrade to
         # eager instead of dying. The first generation prints the warmup
         # delay; subsequent turns are fast.
+        #
+        # Also silence the cosmetic "Not enough SMs to use max_autotune_gemm
+        # mode" warning that inductor prints on sm_121 (Blackwell GB10). We
+        # use mode="default", not max_autotune, so the gate is irrelevant —
+        # but the warning fires every torch.compile() call, polluting the
+        # chat startup output. A targeted message filter leaves other inductor
+        # diagnostics visible. (See IMPROVEMENTS.md for the full sm_121 story.)
+        import logging
+        logging.getLogger("torch._inductor.utils").addFilter(
+            lambda r: "Not enough SMs" not in r.getMessage()
+        )
         print("compiling kernels (one-time ~5-30s warmup on first generation; "
               "pass --no-compile to skip)…")
         try:

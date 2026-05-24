@@ -62,7 +62,14 @@ def main():
     model.to(args.device).eval()
     if args.compile:
         # Default-on; degrade to eager if Triton/Inductor unavailable rather
-        # than crashing before the user sees output.
+        # than crashing before the user sees output. Also silence the
+        # cosmetic "Not enough SMs to use max_autotune_gemm mode" warning
+        # that inductor prints on sm_121 — we use mode="default", not
+        # max_autotune, so the gate is irrelevant. See IMPROVEMENTS.md.
+        import logging
+        logging.getLogger("torch._inductor.utils").addFilter(
+            lambda r: "Not enough SMs" not in r.getMessage()
+        )
         print("compiling kernels (one-time ~5-30s warmup; pass --no-compile to skip)…")
         try:
             import torch._dynamo as _dynamo
