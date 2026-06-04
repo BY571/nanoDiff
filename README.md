@@ -213,16 +213,25 @@ perplexity by ~2.3× / ~2.1× respectively. **The alignment tax is roughly
 constant in *relative* terms:** going base → SFT costs 27.8% of base accuracy
 at 50M (19.83 → 14.32) and 28.1% at 150M (21.89 → 15.74). So scaling capacity
 buys you a better SFT model in absolute terms but does *not* shrink the
-relative alignment tax — the SFT distribution shift is, to first order,
+relative alignment tax. The SFT distribution shift is, to first order,
 capacity-independent.
 
 **The 150M → 350M step is bigger on LAMBADA than its val PPL would predict.**
 Val PPL improved 33% (43.8 → 29.3), but LAMBADA PPL improved **84%**
 (358 → 55.3) and LAMBADA accuracy jumped **+15.06 pp** (21.89 → 36.95, +69%
-relative). Bigger model spending its capacity on long-range / discourse
-representations, not just sharper local statistics — a *capability* signal,
-not just a fitting one. (For calibration: GPT-2 124M scores ~32% on LAMBADA,
-GPT-2 355M scores ~46%.)
+relative). The bigger model is spending its capacity on long-range and
+discourse representations, not just sharper local statistics. A *capability*
+signal, not just a fitting one.
+
+For calibration: GPT-2 124M scores ~32% on LAMBADA, GPT-2 355M scores ~46%.
+The per-parameter comparison flatters GPT-2, though. GPT-2 saw ~40B tokens of
+WebText, **~4× more than our 350M's 10B**, on a distribution that overlaps
+LAMBADA's BookCorpus origin much more than our FineWeb-Edu shard does. GPT-2
+is also scored autoregressively, which gives teacher-forcing across multi-token
+target spans, while our single-pass diffusion scoring conditions each masked
+position on the prefix alone. Tokens-seen, training-data distribution, and
+evaluation methodology each shift the number; comparing on parameters alone
+is the least informative framing.
 
 (MMLU, HellaSwag, ARC are still at random chance at 350M scale, so they're
 not run yet — see `benchmark/README.md` for the rationale.)
