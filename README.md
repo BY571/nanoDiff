@@ -43,8 +43,6 @@ No noise schedule, no timestep embedding (LLaDA's *time-free* parameterization),
                 ▲ each step: predict, commit confident, repeat
 ```
 
-**Why bother:** parallel generation, bidirectional context, native infilling, tunable quality↔speed dial.
-
 ---
 
 ## Quickstart
