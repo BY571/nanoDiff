@@ -14,36 +14,24 @@ small modular package you can read in an afternoon.
 
 ---
 
-## The idea in 60 seconds
+## How it works
 
-An autoregressive LLM writes text left-to-right: `p(x) = Π p(xₜ | x<ₜ)`.
+A masked diffusion LM denoises text instead of writing it left-to-right.
 
-A **masked diffusion LM** instead learns to *un-corrupt* text:
-
-- **Forward process** (`nanodiff/diffusion.py`): pick a mask ratio `t ~ U(0,1)`,
-  then replace each token independently with a `[MASK]` token with probability
-  `t`. That's the entire "noising" process: no Gaussians, no latents.
-- **Model** (`nanodiff/model.py`): a LLaMA-style transformer (RMSNorm, SwiGLU,
-  RoPE) with **one change**: attention is *bidirectional*, so it can use
-  right-context to fill in masks.
-- **Loss** (`nanodiff/diffusion.py`): cross-entropy on the masked positions only,
-  weighted by `1/t`. That weight is what makes the loss a real upper bound on the
-  negative log-likelihood (not just a heuristic).
-- **Sampling** (`nanodiff/sampler.py`): start fully masked, repeatedly predict all
-  tokens but only **commit the most confident ones**, re-mask the rest, iterate.
-  A `block_length` knob smoothly interpolates between pure-diffusion and
-  autoregressive decoding.
-
-Why care: parallel generation, bidirectional context, native infilling, and a
-tunable quality↔speed dial.
+- **Forward process** ([`diffusion.py`](nanodiff/diffusion.py)): sample `t ~ U(0,1)`, replace each token with `[MASK]` independently with probability `t`. No Gaussians, no latents.
+- **Model** ([`model.py`](nanodiff/model.py)): LLaMA-style transformer (RMSNorm, SwiGLU, RoPE) with **bidirectional** attention. The only architectural change from a GPT.
+- **Loss** ([`diffusion.py`](nanodiff/diffusion.py)): `1/t`-weighted cross-entropy on masked positions only. The weight makes it a real NLL upper bound, not a heuristic.
+- **Sampling** ([`sampler.py`](nanodiff/sampler.py)): start fully masked, predict every position, commit the most confident, re-mask the rest, iterate. See [docs/sampling.md](docs/sampling.md) for the full algorithm.
 
 ```
         t=1  ████████████████████   (all [MASK])
              ██ the ███ of ████ is
              ██ the meaning of life is
         t=0  the meaning of life is   (clean text)
-                ▲ each step: predict all, commit the confident ones, repeat
+                ▲ each step: predict, commit confident, repeat
 ```
+
+**Why bother:** parallel generation, bidirectional context, native infilling, tunable quality↔speed dial.
 
 ---
 
