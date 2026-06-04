@@ -206,41 +206,15 @@ suggesting the 350M is *not* at its capacity ceiling at 10B tokens. Pushing to
 
 ![LAMBADA: left panel shows accuracy with base in red (19.8% → 21.9% → 37.0%) and SFT in blue (14.3% → 15.7% → 25.1%) across 50M / 150M / 350M, with the alignment-tax gap growing to 11.8 pp at 350M; right panel shows the corresponding perplexity drop on a log scale (base 834 → 358 → 55, SFT 3344 → 1606 → 287)](assets/lambada.png)
 
-**Capacity helps both stages:** the 150M beats the 50M on LAMBADA accuracy at
-both the base level (+2.06 pp) and the SFT level (+1.42 pp). The 350M extends
-the trend, beating the 150M decisively at both levels (+15.06 pp base, +9.39 pp
-SFT). **The alignment tax grows with scale, though.** Going base → SFT costs
-27.8% of base accuracy at 50M (19.83 → 14.32) and 28.1% at 150M (21.89 →
-15.74), which looked like a capacity-independent SFT distribution shift. At
-350M the tax jumps to **32.0%** (36.95 → 25.13), an 11.82 pp drop vs the
-smaller models' ~6 pp. The PPL blowup ratio (SFT / base) also grows across
-scales: 4.0× → 4.5× → 5.2×.
+**Capacity helps both stages.** Base LAMBADA climbs 19.83 → 21.89 → 36.95% across 50M / 150M / 350M; SFT mirrors (14.32 → 15.74 → 25.13%).
 
-Mechanism: more world-modeling capability means more to lose when SFT shifts
-the distribution toward Alpaca instruction-format. The 50M base was at
-near-chance on LAMBADA (19.83%, PPL 834), so SFT couldn't degrade it much.
-The 350M base was at real capability (36.95%, PPL 55.3), so the post-SFT
-drop is meaningfully larger.
+**The 150M → 350M jump outpaces val PPL.** Val PPL improved 33%, but LAMBADA PPL improved **84%** and accuracy jumped **+15 pp** (+69% relative). The bigger model is spending capacity on long-range and discourse representations, not just sharper local statistics. A *capability* signal, not just a fitting one.
 
-**The 150M → 350M step is bigger on LAMBADA than its val PPL would predict.**
-Val PPL improved 33% (43.8 → 29.3), but LAMBADA PPL improved **84%**
-(358 → 55.3) and LAMBADA accuracy jumped **+15.06 pp** (21.89 → 36.95, +69%
-relative). The bigger model is spending its capacity on long-range and
-discourse representations, not just sharper local statistics. A *capability*
-signal, not just a fitting one.
+**The alignment tax grows with scale.** At 50M and 150M, base → SFT costs ~28% of base accuracy, which looked like a capacity-independent distribution shift. At 350M the tax jumps to **32%** (an 11.8 pp drop vs ~6 pp at smaller scales), and the SFT/base PPL blowup ratio grows in parallel (4.0× → 4.5× → 5.2×). More world-modeling capability means more to lose when SFT shifts the distribution toward Alpaca instruction-format.
 
-For calibration: GPT-2 124M scores ~32% on LAMBADA, GPT-2 355M scores ~46%.
-The per-parameter comparison flatters GPT-2, though. GPT-2 saw ~40B tokens of
-WebText, **~4× more than our 350M's 10B**, on a distribution that overlaps
-LAMBADA's BookCorpus origin much more than our FineWeb-Edu shard does. GPT-2
-is also scored autoregressively, which gives teacher-forcing across multi-token
-target spans, while our single-pass diffusion scoring conditions each masked
-position on the prefix alone. Tokens-seen, training-data distribution, and
-evaluation methodology each shift the number; comparing on parameters alone
-is the least informative framing.
+**Calibration vs GPT-2** (124M ~32%, 355M ~46% on LAMBADA): per-parameter is the least informative framing. GPT-2 saw ~40B tokens (~4× more than our 350M's 10B), on a distribution closer to LAMBADA's BookCorpus origin, scored autoregressively with teacher-forcing across multi-token targets; our single-pass diffusion scoring conditions each masked position on the prefix alone.
 
-(MMLU, HellaSwag, ARC are still at random chance at 350M scale, so they're
-not run yet. See `benchmark/README.md` for the rationale.)
+(MMLU, HellaSwag, ARC are still at random chance at 350M scale, so they're not run yet. See [`benchmark/README.md`](benchmark/README.md) for the rationale.)
 
 ---
 
