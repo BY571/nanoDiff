@@ -1,14 +1,14 @@
 # nanoDiff
 
 A minimal, clean, hackable implementation of a **state-of-the-art diffusion
-language model** — built to *learn, understand, train, and improve* dLLMs.
+language model**, built to *learn, understand, train, and improve* dLLMs.
 
 Think of it as [nanoGPT](https://github.com/karpathy/nanoGPT) / nanochat, but for
 **diffusion** language models instead of autoregressive ones. It distills the
 **LLaDA** recipe (the simplest formulation that has scaled to 8B–100B) down to a
 small modular package you can read in an afternoon.
 
-> Based on **LLaDA — Large Language Diffusion Models**
+> Based on **LLaDA: Large Language Diffusion Models**
 > ([Nie et al. 2025, arXiv:2502.09992](https://arxiv.org/abs/2502.09992)). The
 > broader lineage (D3PM → LLaDA 2.0) is in [References](#references).
 
@@ -22,9 +22,9 @@ A **masked diffusion LM** instead learns to *un-corrupt* text:
 
 - **Forward process** (`nanodiff/diffusion.py`): pick a mask ratio `t ~ U(0,1)`,
   then replace each token independently with a `[MASK]` token with probability
-  `t`. That's the entire "noising" process — no Gaussians, no latents.
+  `t`. That's the entire "noising" process: no Gaussians, no latents.
 - **Model** (`nanodiff/model.py`): a LLaMA-style transformer (RMSNorm, SwiGLU,
-  RoPE) with **one change** — attention is *bidirectional*, so it can use
+  RoPE) with **one change**: attention is *bidirectional*, so it can use
   right-context to fill in masks.
 - **Loss** (`nanodiff/diffusion.py`): cross-entropy on the masked positions only,
   weighted by `1/t`. That weight is what makes the loss a real upper bound on the
@@ -73,7 +73,7 @@ python sft/train.py --config sft/configs/50m_alpaca.py
 
 ### Scaling
 
-Scaling is a one-file change — copy a config and edit the model/optimizer fields:
+Scaling is a one-file change: copy a config and edit the model/optimizer fields.
 
 ```python
 # pretrain/configs/350m.py
@@ -92,42 +92,42 @@ Five pretrained checkpoints are on the Hugging Face Hub:
 
 | Model | What it is |
 |---|---|
-| [Sebasdi/nanodiff-50m-base](https://huggingface.co/Sebasdi/nanodiff-50m-base) | the 50M base — pretrained on ~2B tokens of FineWeb-Edu (val perplexity ~50) |
-| [Sebasdi/nanodiff-150m-base](https://huggingface.co/Sebasdi/nanodiff-150m-base) | the 150M base — pretrained on ~3B tokens of FineWeb-Edu (val perplexity ~44) |
-| [Sebasdi/nanodiff-350m-base](https://huggingface.co/Sebasdi/nanodiff-350m-base) | the 350M base — pretrained on ~10B tokens of FineWeb-Edu (val perplexity ~29, LAMBADA 36.95%) |
+| [Sebasdi/nanodiff-50m-base](https://huggingface.co/Sebasdi/nanodiff-50m-base) | the 50M base, pretrained on ~2B tokens of FineWeb-Edu (val perplexity ~50) |
+| [Sebasdi/nanodiff-150m-base](https://huggingface.co/Sebasdi/nanodiff-150m-base) | the 150M base, pretrained on ~3B tokens of FineWeb-Edu (val perplexity ~44) |
+| [Sebasdi/nanodiff-350m-base](https://huggingface.co/Sebasdi/nanodiff-350m-base) | the 350M base, pretrained on ~10B tokens of FineWeb-Edu (val perplexity ~29, LAMBADA 36.95%) |
 | [Sebasdi/nanodiff-50m-sft-alpaca](https://huggingface.co/Sebasdi/nanodiff-50m-sft-alpaca) | the 50M base, instruction-tuned on Alpaca-cleaned (~51k examples) |
-| [Sebasdi/nanodiff-150m-sft-alpaca](https://huggingface.co/Sebasdi/nanodiff-150m-sft-alpaca) | the 150M base, instruction-tuned on Alpaca-cleaned — meaningfully better than the 50M SFT (LAMBADA 15.74% vs 14.32%) |
+| [Sebasdi/nanodiff-150m-sft-alpaca](https://huggingface.co/Sebasdi/nanodiff-150m-sft-alpaca) | the 150M base, instruction-tuned on Alpaca-cleaned: meaningfully better than the 50M SFT (LAMBADA 15.74% vs 14.32%) |
 
 ```bash
-# 50M base — continues text, document-style
+# 50M base, continues text, document-style
 hf download Sebasdi/nanodiff-50m-base nanodiff-50m-base.pt --local-dir checkpoints/
 python chat.py --ckpt checkpoints/nanodiff-50m-base.pt
 
-# 150M base — same as the 50M, just larger
+# 150M base, same as the 50M, just larger
 hf download Sebasdi/nanodiff-150m-base nanodiff-150m-base.pt --local-dir checkpoints/
 python chat.py --ckpt checkpoints/nanodiff-150m-base.pt
 
-# 350M base — biggest in the family, ~10B tokens of training
+# 350M base, biggest in the family, ~10B tokens of training
 hf download Sebasdi/nanodiff-350m-base nanodiff-350m-base.pt --local-dir checkpoints/
 python chat.py --ckpt checkpoints/nanodiff-350m-base.pt
 
-# 50M SFT — follows instructions (note the --sft flag)
+# 50M SFT, follows instructions (note the --sft flag)
 hf download Sebasdi/nanodiff-50m-sft-alpaca nanodiff-50m-sft-alpaca.pt --local-dir checkpoints/
 python chat.py --ckpt checkpoints/nanodiff-50m-sft-alpaca.pt --sft
 
-# 150M SFT — same recipe, scaled up
+# 150M SFT, same recipe, scaled up
 hf download Sebasdi/nanodiff-150m-sft-alpaca nanodiff-150m-sft-alpaca.pt --local-dir checkpoints/
 python chat.py --ckpt checkpoints/nanodiff-150m-sft-alpaca.pt --sft
 ```
 
 > ⚠️ **Set your expectations.** These are **small models** (50M-350M params)
-> trained on 2-10B tokens — on the order of 1/10th the data a model like GPT-2
+> trained on 2-10B tokens, on the order of 1/10th the data a model like GPT-2
 > saw. They are *learning artifacts*, not usable assistants:
 >
-> - The **base** models *continue* text — prompt them document-style
+> - The **base** models *continue* text. Prompt them document-style
 >   (`"The history of Rome is"`), not question-style.
 > - The **SFT** models follow instructions (`chat.py --sft`), but even at 150M
->   params they **confabulate freely** — fluent English, unreliable facts. SFT
+>   params they **confabulate freely**: fluent English, unreliable facts. SFT
 >   taught them to *answer*, not to *know*.
 > - **All need the repetition penalty.** Small diffusion LMs collapse into
 >   repetition loops under the default sampler; `chat.py` and `sample.py` enable
@@ -149,22 +149,22 @@ python chat.py --ckpt checkpoints/nanodiff-150m-sft-alpaca.pt --sft
 
 The flags:
 
-- **`--compile` / `--no-compile`** — `torch.compile(model)` for kernel fusion.
+- **`--compile` / `--no-compile`**: `torch.compile(model)` for kernel fusion.
   Default **ON**. One-time ~5–30 s warmup on the first generation; subsequent
   generations are ~1.4× faster. Pass `--no-compile` to skip the warmup for
   one-off queries or on builds without Triton.
-- **`--steps`** — denoising iterations. Default **32** (~3 commits per step
+- **`--steps`**: denoising iterations. Default **32** (~3 commits per step
   at gen-length=96). The sampler applies a **within-step repetition
   penalty** so multiple positions committed in the same step don't collide
   on the same token ("process process"). Bump to `--steps 96` for the LLaDA
   one-commit-per-step quality maximum (~3× slower). Below `--steps 24`
   some across-step doubling reappears.
-- **`--use-cache`** — Fast-dLLM block-wise K/V prefix cache
+- **`--use-cache`**: Fast-dLLM block-wise K/V prefix cache
   ([Lou et al., 2025](https://arxiv.org/abs/2505.22618)). Approximate but
   measured LAMBADA-equivalent (15.74% → 15.72%, 1/5153). Pays off at
   `--gen-length≥256` or batched generation; **skip when `--compile` is on**
   (they target the same overhead and don't stack).
-- **`--tau 0.5`** — confidence-threshold parallel decoding. Commits every
+- **`--tau 0.5`**: confidence-threshold parallel decoding. Commits every
   position with model-confidence ≥ τ in this step instead of the fixed
   schedule. Best with `--use-cache` (i.e., on the compile-free path).
 
@@ -180,24 +180,24 @@ A small, controlled scaling result so far. All numbers are from `eval.py`
 | 150M | 3B | 3.78 | 43.8 |
 | **350M** | **10B** | **3.38** | **29.3** |
 
-At matched 3B tokens (rows 2-3) — same `block_size`, same schedule, same data
-shard, only the model and its appropriately-scaled LR differ — the **150M wins
+At matched 3B tokens (rows 2-3), same `block_size`, same schedule, same data
+shard, only the model and its appropriately-scaled LR differ, the **150M wins
 by 0.13 nats (~13% perplexity)**. The control row is what makes that
 defensible: it shows the 50M, given the *same* 3B-token budget, only moves its
 loss by ~0.01 nats versus its 2B baseline. The 50M is capacity-floored at
 ~3.91; the 150M lands *below* that floor. So the gap is **capacity, cleanly
-isolated** — not "trained longer" and not "saw more tokens."
+isolated**, not "trained longer" and not "saw more tokens".
 
 The 150M→350M step (10B tokens, Chinchilla-optimal at ~7B + headroom) delivers
 the largest jump in the family: **-0.38 nats, ~31% perplexity reduction**. The
-training was still improving when it ended — the val curve hadn't flattened,
+training was still improving when it ended; the val curve hadn't flattened,
 suggesting the 350M is *not* at its capacity ceiling at 10B tokens. Pushing to
 ~15B tokens would likely give another 0.05-0.10 nats.
 
 ### Benchmarks
 
 [LAMBADA last-word prediction](benchmark/README.md) on the public test split
-(5153 examples; single-pass diffusion scoring — see `benchmark/lambada.py`):
+(5153 examples; single-pass diffusion scoring, see `benchmark/lambada.py`):
 
 | Model | LAMBADA acc | LAMBADA PPL |
 |---|---:|---:|
@@ -234,7 +234,7 @@ evaluation methodology each shift the number; comparing on parameters alone
 is the least informative framing.
 
 (MMLU, HellaSwag, ARC are still at random chance at 350M scale, so they're
-not run yet — see `benchmark/README.md` for the rationale.)
+not run yet. See `benchmark/README.md` for the rationale.)
 
 ---
 
@@ -251,7 +251,7 @@ loss.backward()
 ```
 
 That's it. No noise schedule, no timestep embedding (we use LLaDA's *time-free*
-parameterization — see the comment at the top of `model.py`), no ELBO bookkeeping.
+parameterization; see the comment at the top of `model.py`), no ELBO bookkeeping.
 
 ---
 
@@ -268,16 +268,16 @@ for step in range(steps):
     x[topk(conf masked to MASK positions, K)] = argmax(logits)[those positions]
 ```
 
-The schedule sets K: with `steps == gen_length` (default), K=1 — one token
-committed per step; with `steps=32, gen_length=96`, K≈3 per step. The
+The schedule sets K: with `steps == gen_length` (default), K=1 (one token
+committed per step); with `steps=32, gen_length=96`, K≈3 per step. The
 `block_length` knob splits the generation into semi-AR chunks (default 32,
-so three blocks) that get filled in sequence — `block_length = gen_length`
+so three blocks) that get filled in sequence. `block_length = gen_length`
 is pure diffusion, `block_length = 1` is strict left-to-right.
 
 The risk at small `steps`: two positions in the same step can independently
 commit the **same** token ("process process"), because the standard
 `rep_penalty` only sees prior-step commits. The sampler counters this with
-a **within-step rep_penalty** — same-token collisions are broken by
+a **within-step rep_penalty**: same-token collisions are broken by
 penalising the loser's confidence so it falls out of the top-K. That makes
 `--steps 32` safe (see [Sampling speed](#sampling-speed)); below ~24 some
 across-step doubling reappears.
@@ -290,7 +290,7 @@ across-step doubling reappears.
 
 ## Training customization
 
-**Dataset — fully swappable.** The pipeline only ever sees a flat `uint16` token
+**Dataset, fully swappable.** The pipeline only ever sees a flat `uint16` token
 array on disk, so it is dataset-agnostic. Either point `prepare_data.py` at any
 Hugging Face text dataset (it just needs a `"text"` field):
 
@@ -299,19 +299,19 @@ python scripts/prepare_data.py --dataset <hf-name> --subset <config> --out-dir d
 ```
 
 or produce your own `train.bin` / `val.bin` (any `uint16` token dump) and set
-`data_dir` in your config — the model never knows the difference.
+`data_dir` in your config; the model never knows the difference.
 
-**Tokenizer — coupled, but in known places.** The GPT-2 BPE is wired in as the
+**Tokenizer, coupled but in known places.** The GPT-2 BPE is wired in as the
 default working path. Swapping it means updating these spots:
 
 | File(s) | What to change |
 |---|---|
 | `scripts/prepare_data.py`, `sample.py`, `pretrain/train.py` | `tiktoken.get_encoding("gpt2")` |
 | `nanodiff/config.py` | `vocab_size`, `mask_token_id` (= last real id + 1, then pad) |
-| `scripts/prepare_data.py`, `sample.py`, `pretrain/train.py` | `EOT` — the document-separator id |
+| `scripts/prepare_data.py`, `sample.py`, `pretrain/train.py` | `EOT`, the document-separator id |
 | `nanodiff/data.py` | `uint16` dtype caps the vocab at 65536; use `uint32` above that |
 
-**Model size — a one-file config change.** See [Scaling](#scaling) above.
+**Model size, a one-file config change.** See [Scaling](#scaling) above.
 
 ---
 
@@ -321,11 +321,11 @@ The recipe `nanoDiff` implements is **LLaDA**; here is the lineage:
 
 | Paper | Year | arXiv |
 |---|---|---|
-| D3PM — Structured Denoising Diffusion in Discrete State-Spaces | 2021 | [2107.03006](https://arxiv.org/abs/2107.03006) |
-| SEDD — Discrete Diffusion by Estimating Data-Distribution Ratios | 2024 | [2310.16834](https://arxiv.org/abs/2310.16834) |
-| MDLM — Simple and Effective Masked Diffusion Language Models | 2024 | [2406.07524](https://arxiv.org/abs/2406.07524) |
-| BD3-LM — Block Diffusion (interpolating AR ↔ diffusion) | 2025 | [2503.09573](https://arxiv.org/abs/2503.09573) |
-| **LLaDA — Large Language Diffusion Models** (primary reference) | 2025 | [2502.09992](https://arxiv.org/abs/2502.09992) |
-| Dream 7B — Diffusion Large Language Models | 2025 | [2508.15487](https://arxiv.org/abs/2508.15487) |
-| LLaDA 2.0 — Scaling Diffusion Language Models to 100B | 2025 | [2512.15745](https://arxiv.org/abs/2512.15745) |
+| D3PM: Structured Denoising Diffusion in Discrete State-Spaces | 2021 | [2107.03006](https://arxiv.org/abs/2107.03006) |
+| SEDD: Discrete Diffusion by Estimating Data-Distribution Ratios | 2024 | [2310.16834](https://arxiv.org/abs/2310.16834) |
+| MDLM: Simple and Effective Masked Diffusion Language Models | 2024 | [2406.07524](https://arxiv.org/abs/2406.07524) |
+| BD3-LM: Block Diffusion (interpolating AR ↔ diffusion) | 2025 | [2503.09573](https://arxiv.org/abs/2503.09573) |
+| **LLaDA: Large Language Diffusion Models** (primary reference) | 2025 | [2502.09992](https://arxiv.org/abs/2502.09992) |
+| Dream 7B: Diffusion Large Language Models | 2025 | [2508.15487](https://arxiv.org/abs/2508.15487) |
+| LLaDA 2.0: Scaling Diffusion Language Models to 100B | 2025 | [2512.15745](https://arxiv.org/abs/2512.15745) |
 | A Survey on Diffusion Language Models | 2025 | [2508.10875](https://arxiv.org/abs/2508.10875) |
