@@ -88,7 +88,7 @@ Everything reads from the `Config` dataclass, so model code never changes.
 
 ## Pretrained models
 
-Five pretrained checkpoints are on the Hugging Face Hub:
+Six pretrained checkpoints are on the Hugging Face Hub:
 
 | Model | What it is |
 |---|---|
@@ -97,6 +97,7 @@ Five pretrained checkpoints are on the Hugging Face Hub:
 | [Sebasdi/nanodiff-350m-base](https://huggingface.co/Sebasdi/nanodiff-350m-base) | the 350M base, pretrained on ~10B tokens of FineWeb-Edu (val perplexity ~29, LAMBADA 36.95%) |
 | [Sebasdi/nanodiff-50m-sft-alpaca](https://huggingface.co/Sebasdi/nanodiff-50m-sft-alpaca) | the 50M base, instruction-tuned on Alpaca-cleaned (~51k examples) |
 | [Sebasdi/nanodiff-150m-sft-alpaca](https://huggingface.co/Sebasdi/nanodiff-150m-sft-alpaca) | the 150M base, instruction-tuned on Alpaca-cleaned: meaningfully better than the 50M SFT (LAMBADA 15.74% vs 14.32%) |
+| [Sebasdi/nanodiff-350m-sft-alpaca](https://huggingface.co/Sebasdi/nanodiff-350m-sft-alpaca) | the 350M base, instruction-tuned on Alpaca-cleaned (best SFT val ~1.07, LAMBADA 25.13%) |
 
 ```bash
 # 50M base, continues text, document-style
@@ -118,6 +119,10 @@ python chat.py --ckpt checkpoints/nanodiff-50m-sft-alpaca.pt --sft
 # 150M SFT, same recipe, scaled up
 hf download Sebasdi/nanodiff-150m-sft-alpaca nanodiff-150m-sft-alpaca.pt --local-dir checkpoints/
 python chat.py --ckpt checkpoints/nanodiff-150m-sft-alpaca.pt --sft
+
+# 350M SFT, same recipe again at the largest size in the family
+hf download Sebasdi/nanodiff-350m-sft-alpaca nanodiff-350m-sft-alpaca.pt --local-dir checkpoints/
+python chat.py --ckpt checkpoints/nanodiff-350m-sft-alpaca.pt --sft
 ```
 
 > ⚠️ **Set your expectations.** These are **small models** (50M-350M params)
@@ -206,15 +211,23 @@ suggesting the 350M is *not* at its capacity ceiling at 10B tokens. Pushing to
 | 150M base | 21.89% | 358 |
 | 150M SFT | 15.74% | 1606 |
 | **350M base** | **36.95%** | **55.3** |
+| **350M SFT** | **25.13%** | **286.6** |
 
 **Capacity helps both stages:** the 150M beats the 50M on LAMBADA accuracy at
-both the base level (+2.06 pp) and the SFT level (+1.42 pp), and lowers
-perplexity by ~2.3× / ~2.1× respectively. **The alignment tax is roughly
-constant in *relative* terms:** going base → SFT costs 27.8% of base accuracy
-at 50M (19.83 → 14.32) and 28.1% at 150M (21.89 → 15.74). So scaling capacity
-buys you a better SFT model in absolute terms but does *not* shrink the
-relative alignment tax. The SFT distribution shift is, to first order,
-capacity-independent.
+both the base level (+2.06 pp) and the SFT level (+1.42 pp). The 350M extends
+the trend, beating the 150M decisively at both levels (+15.06 pp base, +9.39 pp
+SFT). **The alignment tax grows with scale, though.** Going base → SFT costs
+27.8% of base accuracy at 50M (19.83 → 14.32) and 28.1% at 150M (21.89 →
+15.74), which looked like a capacity-independent SFT distribution shift. At
+350M the tax jumps to **32.0%** (36.95 → 25.13), an 11.82 pp drop vs the
+smaller models' ~6 pp. The PPL blowup ratio (SFT / base) also grows across
+scales: 4.0× → 4.5× → 5.2×.
+
+Mechanism: more world-modeling capability means more to lose when SFT shifts
+the distribution toward Alpaca instruction-format. The 50M base was at
+near-chance on LAMBADA (19.83%, PPL 834), so SFT couldn't degrade it much.
+The 350M base was at real capability (36.95%, PPL 55.3), so the post-SFT
+drop is meaningfully larger.
 
 **The 150M → 350M step is bigger on LAMBADA than its val PPL would predict.**
 Val PPL improved 33% (43.8 → 29.3), but LAMBADA PPL improved **84%**
