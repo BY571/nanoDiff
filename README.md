@@ -99,19 +99,6 @@ hf download Sebasdi/nanodiff-350m-sft-alpaca nanodiff-350m-sft-alpaca.pt --local
 python chat.py --ckpt checkpoints/nanodiff-350m-sft-alpaca.pt --sft
 ```
 
-> ⚠️ **Set your expectations.** These are **small models** (50M-350M params)
-> trained on 2-10B tokens, on the order of 1/10th the data a model like GPT-2
-> saw. They are *learning artifacts*, not usable assistants:
->
-> - The **base** models *continue* text. Prompt them document-style
->   (`"The history of Rome is"`), not question-style.
-> - The **SFT** models follow instructions (`chat.py --sft`), but even at 150M
->   params they **confabulate freely**: fluent English, unreliable facts. SFT
->   taught them to *answer*, not to *know*.
-> - **All need the repetition penalty.** Small diffusion LMs collapse into
->   repetition loops under the default sampler; `chat.py` and `sample.py` enable
->   a frequency repetition penalty (`--rep-penalty 3.0`) by default.
-
 ### Sampling speed
 
 `chat.py` defaults to the validated fast preset (`--compile --steps 32
