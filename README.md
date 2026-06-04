@@ -185,6 +185,8 @@ A small, controlled scaling result so far. All numbers are from `eval.py`
 | 150M | 3B | 3.78 | 43.8 |
 | **350M** | **10B** | **3.38** | **29.3** |
 
+![Scaling: left panel shows validation NLL falling with training tokens for the 50M, 150M, and 350M base runs; right panel shows the scaling law of final val NLL vs model parameters with a −0.61 nats/decade trend line](assets/scaling.png)
+
 At matched 3B tokens (rows 2-3), same `block_size`, same schedule, same data
 shard, only the model and its appropriately-scaled LR differ, the **150M wins
 by 0.13 nats (~13% perplexity)**. The control row is what makes that
@@ -212,6 +214,8 @@ suggesting the 350M is *not* at its capacity ceiling at 10B tokens. Pushing to
 | 150M SFT | 15.74% | 1606 |
 | **350M base** | **36.95%** | **55.3** |
 | **350M SFT** | **25.13%** | **286.6** |
+
+![LAMBADA: left panel shows accuracy with base in red (19.8% → 21.9% → 37.0%) and SFT in blue (14.3% → 15.7% → 25.1%) across 50M / 150M / 350M, with the alignment-tax gap growing to 11.8 pp at 350M; right panel shows the corresponding perplexity drop on a log scale (base 834 → 358 → 55, SFT 3344 → 1606 → 287)](assets/lambada.png)
 
 **Capacity helps both stages:** the 150M beats the 50M on LAMBADA accuracy at
 both the base level (+2.06 pp) and the SFT level (+1.42 pp). The 350M extends
