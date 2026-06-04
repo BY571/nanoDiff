@@ -99,7 +99,12 @@ hf download Sebasdi/nanodiff-350m-sft-alpaca nanodiff-350m-sft-alpaca.pt --local
 python chat.py --ckpt checkpoints/nanodiff-350m-sft-alpaca.pt --sft
 ```
 
+<details>
+<summary>
+
 ### Sampling speed
+
+</summary>
 
 `chat.py` defaults to the validated fast preset (`--compile --steps 32
 --block-length 32`) and `sample.py` defaults to compile-on. On the 150M SFT
@@ -134,6 +139,8 @@ The flags:
 - **`--tau 0.5`**: confidence-threshold parallel decoding. Commits every
   position with model-confidence ≥ τ in this step instead of the fixed
   schedule. Best with `--use-cache` (i.e., on the compile-free path).
+
+</details>
 
 ### Scaling
 
