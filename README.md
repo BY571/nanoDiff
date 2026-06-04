@@ -23,6 +23,18 @@ A masked diffusion LM denoises text instead of writing it left-to-right.
 - **Loss** ([`diffusion.py`](nanodiff/diffusion.py)): `1/t`-weighted cross-entropy on masked positions only. The weight makes it a real NLL upper bound, not a heuristic.
 - **Sampling** ([`sampler.py`](nanodiff/sampler.py)): start fully masked, predict every position, commit the most confident, re-mask the rest, iterate. See [docs/sampling.md](docs/sampling.md) for the full algorithm.
 
+The training step is five lines, from [`pretrain/train.py`](pretrain/train.py):
+
+```python
+x0           = train_data.get_batch(...)               # clean tokens
+x_t, mask, t = forward_process(x0, mask_token_id)      # corrupt them
+logits       = model(x_t)                              # predict every token
+loss         = diffusion_loss(logits, x0, mask, t)     # 1/t-weighted CE on masks
+loss.backward()
+```
+
+No noise schedule, no timestep embedding (LLaDA's *time-free* parameterization), no ELBO bookkeeping.
+
 ```
         t=1  ████████████████████   (all [MASK])
              ██ the ███ of ████ is
@@ -195,23 +207,6 @@ suggesting the 350M is *not* at its capacity ceiling at 10B tokens. Pushing to
 **Calibration vs GPT-2** (124M ~32%, 355M ~46% on LAMBADA): per-parameter is the least informative framing. GPT-2 saw ~40B tokens (~4× more than our 350M's 10B), on a distribution closer to LAMBADA's BookCorpus origin, scored autoregressively with teacher-forcing across multi-token targets; our single-pass diffusion scoring conditions each masked position on the prefix alone.
 
 (MMLU, HellaSwag, ARC are still at random chance at 350M scale, so they're not run yet. See [`benchmark/README.md`](benchmark/README.md) for the rationale.)
-
----
-
-## How the training step works
-
-The entire learning signal, from `pretrain/train.py`:
-
-```python
-x0           = train_data.get_batch(...)               # clean tokens  (B, T)
-x_t, mask, t = forward_process(x0, mask_token_id)      # corrupt them
-logits       = model(x_t)                              # predict every token
-loss         = diffusion_loss(logits, x0, mask, t)     # 1/t-weighted CE on masks
-loss.backward()
-```
-
-That's it. No noise schedule, no timestep embedding (we use LLaDA's *time-free*
-parameterization; see the comment at the top of `model.py`), no ELBO bookkeeping.
 
 ---
 
