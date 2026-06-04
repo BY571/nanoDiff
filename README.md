@@ -62,8 +62,8 @@ python pretrain/train.py --config pretrain/configs/50m.py
 #    ...or multi-GPU:
 torchrun --standalone --nproc_per_node=8 pretrain/train.py --config pretrain/configs/50m.py
 
-# 3. sample / evaluate
-python sample.py --ckpt checkpoints/50m/ckpt.pt --prompt "The meaning of life is"
+# 3. chat / evaluate
+python chat.py --ckpt checkpoints/50m/ckpt.pt
 python eval.py --ckpt checkpoints/50m/ckpt.pt --iters 500
 
 # 4. (optional) instruction-tune the base on Alpaca-cleaned
@@ -123,8 +123,8 @@ python chat.py --ckpt checkpoints/nanodiff-350m-sft-alpaca.pt --sft
 
 </summary>
 
-`chat.py` defaults to the validated fast preset (`--compile --steps 32
---block-length 32`) and `sample.py` defaults to compile-on. On the 150M SFT
+`chat.py` defaults to the validated fast preset
+(`--compile --steps 32 --block-length 32`). On the 150M SFT
 (DGX Spark / GB10, sampling at `temp=0.8 top-p=0.9 rep-penalty=3 gen-length=96`):
 
 | Configuration | tok/s | Speedup |
@@ -236,9 +236,9 @@ default working path. Swapping it means updating these spots:
 
 | File(s) | What to change |
 |---|---|
-| `scripts/prepare_data.py`, `sample.py`, `pretrain/train.py` | `tiktoken.get_encoding("gpt2")` |
+| `scripts/prepare_data.py`, `chat.py`, `pretrain/train.py` | `tiktoken.get_encoding("gpt2")` |
 | `nanodiff/config.py` | `vocab_size`, `mask_token_id` (= last real id + 1, then pad) |
-| `scripts/prepare_data.py`, `sample.py`, `pretrain/train.py` | `EOT`, the document-separator id |
+| `scripts/prepare_data.py`, `chat.py`, `pretrain/train.py` | `EOT`, the document-separator id |
 | `nanodiff/data.py` | `uint16` dtype caps the vocab at 65536; use `uint32` above that |
 
 **Model size, a one-file config change.** See [Scaling](#scaling) above.

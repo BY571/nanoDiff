@@ -1,8 +1,8 @@
 # How sampling works
 
 A short walkthrough of the iterative un-masking sampler used by
-`chat.py`, `sample.py`, and the periodic sanity-sample in
-`pretrain/train.py`. The full implementation is in
+`chat.py` and the periodic sanity-sample in `pretrain/train.py`.
+The full implementation is in
 [`nanodiff/sampler.py`](../nanodiff/sampler.py).
 
 ## The core loop
@@ -62,9 +62,9 @@ repeating token.
 Worth flagging because both are called "steps" in different parts of
 nanoDiff:
 
-- `--steps` in `chat.py` / `sample.py` (or `cfg.sample_steps` in
-  training configs) counts **denoising iterations within one
-  generation**. Range: 16-96 in our typical use. Tunable per call.
+- `--steps` in `chat.py` (or `cfg.sample_steps` in training configs)
+  counts **denoising iterations within one generation**. Range:
+  16-96 in our typical use. Tunable per call.
 - `max_iters` in `pretrain/configs/*.py` and `sft/configs/*.py` counts
   **optimizer iterations across the dataset**. Range: 5,000-76,300 in
   our family runs. Fixed per training run.
