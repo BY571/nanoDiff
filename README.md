@@ -88,12 +88,13 @@ Everything reads from the `Config` dataclass, so model code never changes.
 
 ## Pretrained models
 
-Four pretrained checkpoints are on the Hugging Face Hub:
+Five pretrained checkpoints are on the Hugging Face Hub:
 
 | Model | What it is |
 |---|---|
 | [Sebasdi/nanodiff-50m-base](https://huggingface.co/Sebasdi/nanodiff-50m-base) | the 50M base — pretrained on ~2B tokens of FineWeb-Edu (val perplexity ~50) |
 | [Sebasdi/nanodiff-150m-base](https://huggingface.co/Sebasdi/nanodiff-150m-base) | the 150M base — pretrained on ~3B tokens of FineWeb-Edu (val perplexity ~44) |
+| [Sebasdi/nanodiff-350m-base](https://huggingface.co/Sebasdi/nanodiff-350m-base) | the 350M base — pretrained on ~10B tokens of FineWeb-Edu (val perplexity ~29, LAMBADA 36.95%) |
 | [Sebasdi/nanodiff-50m-sft-alpaca](https://huggingface.co/Sebasdi/nanodiff-50m-sft-alpaca) | the 50M base, instruction-tuned on Alpaca-cleaned (~51k examples) |
 | [Sebasdi/nanodiff-150m-sft-alpaca](https://huggingface.co/Sebasdi/nanodiff-150m-sft-alpaca) | the 150M base, instruction-tuned on Alpaca-cleaned — meaningfully better than the 50M SFT (LAMBADA 15.74% vs 14.32%) |
 
@@ -106,6 +107,10 @@ python chat.py --ckpt checkpoints/nanodiff-50m-base.pt
 hf download Sebasdi/nanodiff-150m-base nanodiff-150m-base.pt --local-dir checkpoints/
 python chat.py --ckpt checkpoints/nanodiff-150m-base.pt
 
+# 350M base — biggest in the family, ~10B tokens of training
+hf download Sebasdi/nanodiff-350m-base nanodiff-350m-base.pt --local-dir checkpoints/
+python chat.py --ckpt checkpoints/nanodiff-350m-base.pt
+
 # 50M SFT — follows instructions (note the --sft flag)
 hf download Sebasdi/nanodiff-50m-sft-alpaca nanodiff-50m-sft-alpaca.pt --local-dir checkpoints/
 python chat.py --ckpt checkpoints/nanodiff-50m-sft-alpaca.pt --sft
@@ -115,8 +120,8 @@ hf download Sebasdi/nanodiff-150m-sft-alpaca nanodiff-150m-sft-alpaca.pt --local
 python chat.py --ckpt checkpoints/nanodiff-150m-sft-alpaca.pt --sft
 ```
 
-> ⚠️ **Set your expectations.** These are **small models** (50M-150M params)
-> trained on 2-3B tokens — on the order of 1/100th the data a model like GPT-2
+> ⚠️ **Set your expectations.** These are **small models** (50M-350M params)
+> trained on 2-10B tokens — on the order of 1/10th the data a model like GPT-2
 > saw. They are *learning artifacts*, not usable assistants:
 >
 > - The **base** models *continue* text — prompt them document-style
@@ -172,19 +177,22 @@ A small, controlled scaling result so far. All numbers are from `eval.py`
 |---|---:|---:|---:|
 | 50M | 2B | 3.92 | 50.6 |
 | 50M *(matched-token control)* | 3B | 3.91 | 50.1 |
-| **150M** | **3B** | **3.78** | **43.8** |
+| 150M | 3B | 3.78 | 43.8 |
+| **350M** | **10B** | **3.38** | **29.3** |
 
-At matched 3B tokens — same `block_size`, same schedule, same data shard, only
-the model and its appropriately-scaled LR differ — the **150M wins by 0.13 nats
-(~13% perplexity)**. The control row is what makes that defensible: it shows
-the 50M, given the *same* 3B-token budget, only moves its loss by ~0.01 nats
-versus its 2B baseline. The 50M is essentially capacity-floored at ~3.91; the
-150M lands *below* that floor. So the gap is **capacity, cleanly isolated** —
-not "trained longer" and not "saw more tokens."
+At matched 3B tokens (rows 2-3) — same `block_size`, same schedule, same data
+shard, only the model and its appropriately-scaled LR differ — the **150M wins
+by 0.13 nats (~13% perplexity)**. The control row is what makes that
+defensible: it shows the 50M, given the *same* 3B-token budget, only moves its
+loss by ~0.01 nats versus its 2B baseline. The 50M is capacity-floored at
+~3.91; the 150M lands *below* that floor. So the gap is **capacity, cleanly
+isolated** — not "trained longer" and not "saw more tokens."
 
-Next rung on the ladder: 350M, Chinchilla-optimal at ~7B tokens — config
-([`pretrain/configs/350m.py`](pretrain/configs/350m.py)) and 10B-token data
-shard ready; launch queued.
+The 150M→350M step (10B tokens, Chinchilla-optimal at ~7B + headroom) delivers
+the largest jump in the family: **-0.38 nats, ~31% perplexity reduction**. The
+training was still improving when it ended — the val curve hadn't flattened,
+suggesting the 350M is *not* at its capacity ceiling at 10B tokens. Pushing to
+~15B tokens would likely give another 0.05-0.10 nats.
 
 ### Benchmarks
 
@@ -195,19 +203,28 @@ shard ready; launch queued.
 |---|---:|---:|
 | 50M base | 19.83% | 834 |
 | 50M SFT | 14.32% | 3344 |
-| **150M base** | **21.89%** | **358** |
-| **150M SFT** | **15.74%** | **1606** |
+| 150M base | 21.89% | 358 |
+| 150M SFT | 15.74% | 1606 |
+| **350M base** | **36.95%** | **55.3** |
 
-Two things to notice. **Capacity helps both stages:** the 150M beats the 50M
-on LAMBADA accuracy at both the base level (+2.06 pp) and the SFT level
-(+1.42 pp), and lowers perplexity by ~2.3× / ~2.1× respectively. **The
-alignment tax is roughly constant in *relative* terms:** going base → SFT
-costs 27.8% of base accuracy at 50M (19.83 → 14.32) and 28.1% at 150M
-(21.89 → 15.74). So scaling capacity buys you a better SFT model in
-absolute terms but does *not* shrink the relative alignment tax — the SFT
-distribution shift is, to first order, capacity-independent.
+**Capacity helps both stages:** the 150M beats the 50M on LAMBADA accuracy at
+both the base level (+2.06 pp) and the SFT level (+1.42 pp), and lowers
+perplexity by ~2.3× / ~2.1× respectively. **The alignment tax is roughly
+constant in *relative* terms:** going base → SFT costs 27.8% of base accuracy
+at 50M (19.83 → 14.32) and 28.1% at 150M (21.89 → 15.74). So scaling capacity
+buys you a better SFT model in absolute terms but does *not* shrink the
+relative alignment tax — the SFT distribution shift is, to first order,
+capacity-independent.
 
-(MMLU, HellaSwag, ARC sit at random chance at 50–150M scale, so they're
+**The 150M → 350M step is bigger on LAMBADA than its val PPL would predict.**
+Val PPL improved 33% (43.8 → 29.3), but LAMBADA PPL improved **84%**
+(358 → 55.3) and LAMBADA accuracy jumped **+15.06 pp** (21.89 → 36.95, +69%
+relative). Bigger model spending its capacity on long-range / discourse
+representations, not just sharper local statistics — a *capability* signal,
+not just a fitting one. (For calibration: GPT-2 124M scores ~32% on LAMBADA,
+GPT-2 355M scores ~46%.)
+
+(MMLU, HellaSwag, ARC are still at random chance at 350M scale, so they're
 not run yet — see `benchmark/README.md` for the rationale.)
 
 ---
