@@ -8,6 +8,8 @@ Think of it as [nanoGPT](https://github.com/karpathy/nanoGPT) / nanochat, but fo
 **LLaDA** recipe (the simplest formulation that has scaled to 8B–100B) down to a
 small modular package you can read in an afternoon.
 
+Includes pretraining ([`pretrain/train.py`](pretrain/train.py), [FineWeb-Edu](https://huggingface.co/datasets/HuggingFaceFW/fineweb-edu) by default) and instruction fine-tuning ([`sft/train.py`](sft/train.py), [Alpaca-cleaned](https://huggingface.co/datasets/yahma/alpaca-cleaned)). Evaluation: held-out perplexity via [`eval.py`](eval.py) and LAMBADA accuracy / PPL via [`benchmark/lambada.py`](benchmark/lambada.py).
+
 > Based on **LLaDA: Large Language Diffusion Models**
 > ([Nie et al. 2025, arXiv:2502.09992](https://arxiv.org/abs/2502.09992)). The
 > broader lineage (D3PM → LLaDA 2.0) is in [References](#references).
