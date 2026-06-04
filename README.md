@@ -114,6 +114,8 @@ hf download Sebasdi/nanodiff-350m-sft-alpaca nanodiff-350m-sft-alpaca.pt --local
 python chat.py --ckpt checkpoints/nanodiff-350m-sft-alpaca.pt --sft
 ```
 
+</details>
+
 <details>
 <summary>
 
@@ -210,8 +212,6 @@ suggesting the 350M is *not* at its capacity ceiling at 10B tokens. Pushing to
 **Calibration vs GPT-2** (124M ~32%, 355M ~46% on LAMBADA): per-parameter is the least informative framing. GPT-2 saw ~40B tokens (~4× more than our 350M's 10B), on a distribution closer to LAMBADA's BookCorpus origin, scored autoregressively with teacher-forcing across multi-token targets; our single-pass diffusion scoring conditions each masked position on the prefix alone.
 
 (MMLU, HellaSwag, ARC are still at random chance at 350M scale, so they're not run yet. See [`benchmark/README.md`](benchmark/README.md) for the rationale.)
-
-</details>
 
 ---
 
