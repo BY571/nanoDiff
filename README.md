@@ -90,6 +90,9 @@ Everything reads from the `Config` dataclass, so model code never changes.
 
 Six pretrained checkpoints are on the Hugging Face Hub:
 
+<details>
+<summary>Click to expand: model list, download commands, speed knobs, scaling, benchmarks</summary>
+
 | Model | What it is |
 |---|---|
 | [Sebasdi/nanodiff-50m-base](https://huggingface.co/Sebasdi/nanodiff-50m-base) | the 50M base, pretrained on ~2B tokens of FineWeb-Edu (val perplexity ~50) |
@@ -207,6 +210,8 @@ suggesting the 350M is *not* at its capacity ceiling at 10B tokens. Pushing to
 **Calibration vs GPT-2** (124M ~32%, 355M ~46% on LAMBADA): per-parameter is the least informative framing. GPT-2 saw ~40B tokens (~4× more than our 350M's 10B), on a distribution closer to LAMBADA's BookCorpus origin, scored autoregressively with teacher-forcing across multi-token targets; our single-pass diffusion scoring conditions each masked position on the prefix alone.
 
 (MMLU, HellaSwag, ARC are still at random chance at 350M scale, so they're not run yet. See [`benchmark/README.md`](benchmark/README.md) for the rationale.)
+
+</details>
 
 ---
 
