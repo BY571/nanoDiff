@@ -87,28 +87,14 @@ Six pretrained checkpoints are on the Hugging Face Hub:
 | [Sebasdi/nanodiff-150m-sft-alpaca](https://huggingface.co/Sebasdi/nanodiff-150m-sft-alpaca) | the 150M base, instruction-tuned on Alpaca-cleaned: meaningfully better than the 50M SFT (LAMBADA 15.74% vs 14.32%) |
 | [Sebasdi/nanodiff-350m-sft-alpaca](https://huggingface.co/Sebasdi/nanodiff-350m-sft-alpaca) | the 350M base, instruction-tuned on Alpaca-cleaned (best SFT val ~1.07, LAMBADA 25.13%) |
 
+Pick any model name from the table above; the pattern is the same:
+
 ```bash
-# 50M base, continues text, document-style
-hf download Sebasdi/nanodiff-50m-base nanodiff-50m-base.pt --local-dir checkpoints/
-python chat.py --ckpt checkpoints/nanodiff-50m-base.pt
-
-# 150M base, same as the 50M, just larger
-hf download Sebasdi/nanodiff-150m-base nanodiff-150m-base.pt --local-dir checkpoints/
-python chat.py --ckpt checkpoints/nanodiff-150m-base.pt
-
-# 350M base, biggest in the family, ~10B tokens of training
+# Base model (continues text, prompt document-style):
 hf download Sebasdi/nanodiff-350m-base nanodiff-350m-base.pt --local-dir checkpoints/
 python chat.py --ckpt checkpoints/nanodiff-350m-base.pt
 
-# 50M SFT, follows instructions (note the --sft flag)
-hf download Sebasdi/nanodiff-50m-sft-alpaca nanodiff-50m-sft-alpaca.pt --local-dir checkpoints/
-python chat.py --ckpt checkpoints/nanodiff-50m-sft-alpaca.pt --sft
-
-# 150M SFT, same recipe, scaled up
-hf download Sebasdi/nanodiff-150m-sft-alpaca nanodiff-150m-sft-alpaca.pt --local-dir checkpoints/
-python chat.py --ckpt checkpoints/nanodiff-150m-sft-alpaca.pt --sft
-
-# 350M SFT, same recipe again at the largest size in the family
+# SFT model (follows instructions, note the --sft flag):
 hf download Sebasdi/nanodiff-350m-sft-alpaca nanodiff-350m-sft-alpaca.pt --local-dir checkpoints/
 python chat.py --ckpt checkpoints/nanodiff-350m-sft-alpaca.pt --sft
 ```
