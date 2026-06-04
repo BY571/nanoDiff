@@ -217,6 +217,9 @@ suggesting the 350M is *not* at its capacity ceiling at 10B tokens. Pushing to
 
 ## Training customization
 
+<details>
+<summary>Click to expand: dataset / tokenizer / model size swap notes</summary>
+
 **Dataset, fully swappable.** The pipeline only ever sees a flat `uint16` token
 array on disk, so it is dataset-agnostic. Either point `prepare_data.py` at any
 Hugging Face text dataset (it just needs a `"text"` field):
@@ -239,6 +242,8 @@ default working path. Swapping it means updating these spots:
 | `nanodiff/data.py` | `uint16` dtype caps the vocab at 65536; use `uint32` above that |
 
 **Model size, a one-file config change.** See [Scaling](#scaling) above.
+
+</details>
 
 ---
 
